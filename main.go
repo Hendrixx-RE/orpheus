@@ -3,12 +3,14 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"orpheus/internal/tui"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func main() {
@@ -32,7 +34,11 @@ func loadEnv() {
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			log.Fatal(err)
+		}
+	}()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -47,7 +53,9 @@ func loadEnv() {
 		key = strings.TrimSpace(key)
 		val = strings.TrimSpace(val)
 		if os.Getenv(key) == "" {
-			os.Setenv(key, val)
+			if err := os.Setenv(key, val); err != nil {
+				log.Fatal(err)
+			}
 		}
 	}
 }

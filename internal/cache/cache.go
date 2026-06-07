@@ -50,7 +50,9 @@ func (c *Cache) load() {
 	if err != nil {
 		return
 	}
-	json.Unmarshal(data, &c.data)
+	if err := json.Unmarshal(data, &c.data); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func (c *Cache) save() {

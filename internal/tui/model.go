@@ -4,15 +4,16 @@ import (
 	"context"
 	"sort"
 
+	"orpheus/internal/ai"
+	"orpheus/internal/cache"
+	"orpheus/internal/pm"
+	"orpheus/internal/svc"
+
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"orpheus/internal/ai"
-	"orpheus/internal/cache"
-	"orpheus/internal/pm"
-	"orpheus/internal/svc"
 )
 
 type viewID int
@@ -63,9 +64,9 @@ type Model struct {
 	cleanupLoaded bool
 
 	// services
-	services   []svc.Service
-	svcCursor  int
-	svcLoaded  bool
+	services  []svc.Service
+	svcCursor int
+	svcLoaded bool
 
 	spinner spinner.Model
 	lastKey string
@@ -252,8 +253,8 @@ func (m Model) listPanelHeight() int {
 	return m.height - 4 // borders + status bar + header
 }
 
-func (m Model) sidebarWidth() int  { return 18 }
-func (m Model) detailWidth() int   { return 46 }
+func (m Model) sidebarWidth() int { return 18 }
+func (m Model) detailWidth() int  { return 46 }
 func (m Model) listWidth() int {
 	return m.width - m.sidebarWidth() - m.detailWidth() - 6
 }
@@ -266,13 +267,6 @@ func clamp(v, lo, hi int) int {
 		return hi
 	}
 	return v
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func contains(s, sub string) bool {

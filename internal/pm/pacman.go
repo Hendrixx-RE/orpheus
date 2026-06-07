@@ -109,12 +109,12 @@ func parsePacmanQi(data []byte) ([]Package, error) {
 			continue
 		}
 
-		colon := strings.Index(line, ":")
-		if colon < 0 {
+		before, after, ok := strings.Cut(line, ":")
+		if !ok {
 			continue
 		}
-		key := strings.TrimSpace(line[:colon])
-		val := strings.TrimSpace(line[colon+1:])
+		key := strings.TrimSpace(before)
+		val := strings.TrimSpace(after)
 		lastKey = key
 
 		if key == "Name" {
@@ -222,7 +222,6 @@ func parseDate(s string) time.Time {
 	}
 	return time.Time{}
 }
-
 
 func parseNameSet(data []byte) map[string]bool {
 	set := make(map[string]bool)

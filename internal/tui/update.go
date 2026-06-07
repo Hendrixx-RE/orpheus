@@ -3,10 +3,11 @@ package tui
 import (
 	"strings"
 
+	"orpheus/internal/pm"
+
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"orpheus/internal/pm"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

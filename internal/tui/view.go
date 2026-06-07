@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"orpheus/internal/pm"
 	"orpheus/internal/svc"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func (m Model) View() string {
@@ -113,10 +114,7 @@ func (m Model) renderPackageList(w, h int) string {
 
 	visible := h - 2 // header + divider
 	start := m.listOffset
-	end := start + visible
-	if end > len(pkgs) {
-		end = len(pkgs)
-	}
+	end := min(start+visible, len(pkgs))
 
 	for i := start; i < end; i++ {
 		p := pkgs[i]

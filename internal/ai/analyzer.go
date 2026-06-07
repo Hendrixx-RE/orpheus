@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -15,8 +16,8 @@ import (
 )
 
 const (
-	defaultModel   = "llama-3.3-70b-versatile"
-	groqEndpoint   = "https://api.groq.com/openai/v1/chat/completions"
+	defaultModel = "llama-3.3-70b-versatile"
+	groqEndpoint = "https://api.groq.com/openai/v1/chat/completions"
 )
 
 type Analyzer struct {
@@ -57,7 +58,7 @@ func (a *Analyzer) Analyze(ctx context.Context, pkg *pm.Package) (string, error)
 	})
 
 	backoff := 5 * time.Second
-	for attempt := 0; attempt < 4; attempt++ {
+	for attempt := range 4 {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
@@ -80,7 +81,9 @@ func (a *Analyzer) Analyze(ctx context.Context, pkg *pm.Package) (string, error)
 		}
 
 		data, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		if err := resp.Body.Close(); err != nil {
+			log.Fatal(err)
+		}
 		if err != nil {
 			return "", err
 		}

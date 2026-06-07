@@ -39,10 +39,7 @@ func (p *Package) ComputeHealth() int {
 	}
 
 	sizeMB := p.Size / (1024 * 1024)
-	sizeScore := int(sizeMB / 20)
-	if sizeScore > 30 {
-		sizeScore = 30
-	}
+	sizeScore := min(int(sizeMB/20), 30)
 	score += sizeScore
 
 	age := time.Since(p.InstallDate)
