@@ -18,7 +18,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.detailVP = viewport.New(m.detailWidth()-4, m.height-6)
+		m.detailVP = viewport.New(m.detailWidth()-6, m.height-6)
 		if m.selectedPkg != nil {
 			m.detailVP.SetContent(m.buildDetailContent())
 		}
@@ -362,25 +362,25 @@ func (m Model) buildDetailContent() string {
 	}
 
 	sb.WriteString("\n" + styleKey.Render("Health") + "\n")
-	sb.WriteString("  " + renderHealthBar(p.HealthScore) + "\n")
+	sb.WriteString(renderHealthBar(p.HealthScore) + "\n")
 
 	sb.WriteString("\n" + styleDivider.Render(strings.Repeat("─", m.detailWidth()-6)) + "\n")
-	sb.WriteString(styleAILabel.Render("  AI Analysis") + "\n")
+	sb.WriteString(styleAILabel.Render("AI Analysis") + "\n")
 	sb.WriteString(styleDivider.Render(strings.Repeat("─", m.detailWidth()-6)) + "\n\n")
 
 	switch {
 	case m.aiLoading:
-		sb.WriteString("  " + m.spinner.View() + " " + styleDimmed.Render("Analyzing...") + "\n")
+		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Analyzing...") + "\n")
 	case m.aiErr != "":
-		sb.WriteString(styleOrphan.Render("  "+m.aiErr) + "\n")
+		sb.WriteString(styleOrphan.Render(m.aiErr) + "\n")
 	case m.aiText != "":
 		body, verdict := splitVerdict(m.aiText)
 		sb.WriteString(styleVal.Render(wrapText(body, m.detailWidth()-8)) + "\n\n")
 		if verdict != "" {
-			sb.WriteString(styleVerdict.Render("  "+verdict) + "\n")
+			sb.WriteString(styleVerdict.Render(verdict) + "\n")
 		}
 	default:
-		sb.WriteString(styleDimmed.Render("  Press a to analyze with AI") + "\n")
+		sb.WriteString(styleDimmed.Render("Press a to analyze with AI") + "\n")
 	}
 
 	return sb.String()

@@ -267,7 +267,7 @@ func (m Model) renderDetailPanel() string {
 	h := m.height - 3
 
 	var content string
-	if m.selectedPkg == nil {
+	if m.selectedPkg == nil || m.focusedPanel != panelDetail {
 		content = m.renderDetailEmpty()
 	} else {
 		content = m.detailVP.View()
@@ -277,16 +277,13 @@ func (m Model) renderDetailPanel() string {
 	if m.focusedPanel == panelDetail {
 		st = stylePanelFocused
 	}
-	return st.Width(w).Height(h).Render(content)
+	return st.Width(w).Height(h).Padding(0, 2).Render(content)
 }
 
 func (m Model) renderDetailEmpty() string {
 	var sb strings.Builder
 	sb.WriteString(styleTitle.Render("Detail") + "\n\n")
-	sb.WriteString(styleDimmed.Render("  Select a package with Enter\n"))
-	sb.WriteString(styleDimmed.Render("  or press l to open details.\n\n"))
-	sb.WriteString(styleDimmed.Render("  AI analysis runs automatically\n"))
-	sb.WriteString(styleDimmed.Render("  when a package is selected.\n"))
+	sb.WriteString(styleDimmed.Render("Select a package with Enter\n"))
 	return sb.String()
 }
 
