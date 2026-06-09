@@ -274,6 +274,12 @@ func (m Model) handleListKey(key string) (Model, tea.Cmd) {
 			m.applyFilter()
 		}
 		m.lastKey = ""
+	case "s":
+		if m.activeView == viewPackages {
+			m.sortMode = (m.sortMode + 1) % 3
+			m.applyFilter()
+		}
+		m.lastKey = ""
 	case "enter", "l", "right":
 		cmd := m.triggerSelect()
 		m.lastKey = ""
@@ -361,9 +367,6 @@ func (m Model) buildDetailContent() string {
 		sb.WriteString(styleExplicit.Render("  "+strings.Join(p.RequiredBy, "  ")) + "\n")
 	}
 
-	sb.WriteString("\n" + styleKey.Render("Health") + "\n")
-	sb.WriteString(renderHealthBar(p.HealthScore) + "\n")
-
 	sb.WriteString("\n" + styleDivider.Render(strings.Repeat("─", m.detailWidth()-6)) + "\n")
 	sb.WriteString(styleAILabel.Render("AI Analysis") + "\n")
 	sb.WriteString(styleDivider.Render(strings.Repeat("─", m.detailWidth()-6)) + "\n\n")
@@ -384,24 +387,6 @@ func (m Model) buildDetailContent() string {
 	}
 
 	return sb.String()
-}
-
-func renderHealthBar(score int) string {
-	filled := score / 10
-	empty := 10 - filled
-	bar := strings.Repeat("●", filled) + strings.Repeat("○", empty)
-	label := " " + itoa(score) + "/100"
-
-	var colored string
-	switch {
-	case score >= 70:
-		colored = styleHealthHigh.Render(bar)
-	case score >= 40:
-		colored = styleHealthMid.Render(bar)
-	default:
-		colored = styleHealthLow.Render(bar)
-	}
-	return colored + styleDimmed.Render(label)
 }
 
 func reasonLabel(p *pm.Package) string {

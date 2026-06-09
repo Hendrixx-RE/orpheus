@@ -94,9 +94,20 @@ func (m Model) renderPackageList(w, h int) string {
 
 	// header
 	count := fmt.Sprintf("%d", len(m.filteredPkgs))
-	title := "Packages (" + count + ")"
+	
+	var sortLabel string
+	switch m.sortMode {
+	case sortByName:
+		sortLabel = "Name"
+	case sortBySize:
+		sortLabel = "Size"
+	case sortByDate:
+		sortLabel = "Date"
+	}
+	title := "Packages (" + count + ")  " + styleDimmed.Render("by "+sortLabel)
+
 	if m.searching || m.searchInput.Value() != "" {
-		title = "Packages  " + styleAILabel.Render("/"+m.searchInput.Value())
+		title = "Packages  " + styleAILabel.Render("/"+m.searchInput.Value()) + "  " + styleDimmed.Render("by "+sortLabel)
 	}
 	sb.WriteString(styleTitle.Render(title) + "\n")
 	sb.WriteString(styleDivider.Render(strings.Repeat("─", w-2)) + "\n")
@@ -133,8 +144,8 @@ func (m Model) renderPackageList(w, h int) string {
 
 func renderPkgLine(p pm.Package, width int, selected bool) string {
 	badge := badgeFor(p)
-	nameWidth := width - 12
-	name := truncate(p.Name, nameWidth)
+	
+	size := fmt.Sprintf("%-10s", p.FormatSize())
 
 	var reason string
 	switch p.ReasonShort() {
@@ -146,7 +157,10 @@ func renderPkgLine(p pm.Package, width int, selected bool) string {
 		reason = styleDimmed.Render("DEP   ")
 	}
 
-	line := badge + " " + padRight(name, nameWidth) + " " + reason
+	nameWidth := width - 23
+	name := truncate(p.Name, nameWidth)
+
+	line := badge + " " + padRight(name, nameWidth) + " " + styleDimmed.Render(size) + " " + reason
 
 	if selected {
 		return styleSelected.Render(" " + line + " ")
@@ -175,7 +189,7 @@ func (m Model) renderCleanupList(w, h int) string {
 	}
 
 	if len(m.cleanupPkgs) == 0 {
-		sb.WriteString("\n  " + styleHealthLow.Render("✓ No orphaned packages found") + "\n")
+		sb.WriteString("\n  " + lipgloss.NewStyle().Foreground(colorGreen).Render("✓ No orphaned packages found") + "\n")
 		sb.WriteString("  " + styleDimmed.Render("Your system is clean.") + "\n")
 		return sb.String()
 	}
@@ -193,9 +207,9 @@ func (m Model) renderCleanupList(w, h int) string {
 }
 
 func renderCleanupLine(p pm.Package, width int, selected bool) string {
-	badge := p.HealthBadge()
+	badge := styleOrphan.Render("●")
 	size := fmt.Sprintf("%-10s", p.FormatSize())
-	nameWidth := width - len(badge) - len(size) - 4
+	nameWidth := width - len("●") - len(size) - 4
 	name := truncate(p.Name, nameWidth)
 
 	line := badge + " " + padRight(name, nameWidth) + " " + styleDimmed.Render(size)
@@ -238,9 +252,9 @@ func renderServiceLine(s svc.Service, width int, selected bool) string {
 	var badgeStyled string
 	switch {
 	case s.IsActive():
-		badgeStyled = styleHealthLow.Render(badge)
+		badgeStyled = lipgloss.NewStyle().Foreground(colorGreen).Render(badge)
 	case s.IsFailed():
-		badgeStyled = styleHealthHigh.Render(badge)
+		badgeStyled = lipgloss.NewStyle().Foreground(colorRed).Render(badge)
 	default:
 		badgeStyled = styleDimmed.Render(badge)
 	}
@@ -307,6 +321,7 @@ func (m Model) renderStatusBar() string {
 			hints = []string{
 				styleKey.Render("j/k") + " move",
 				styleKey.Render("l/Enter") + " open",
+				styleKey.Render("s") + " sort",
 				styleKey.Render("/") + " search",
 				styleKey.Render("1-3") + " views",
 				styleKey.Render("q") + " quit",

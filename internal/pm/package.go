@@ -22,55 +22,12 @@ type Package struct {
 	HasService    bool
 	ServiceName   string
 	ServiceStatus string
-	HealthScore   int
 }
 
 type Manager interface {
 	Name() string
 	ListAll() ([]Package, error)
 	GetPackage(name string) (*Package, error)
-}
-
-func (p *Package) ComputeHealth() int {
-	score := 0
-
-	if p.IsOrphan {
-		score += 40
-	}
-
-	sizeMB := p.Size / (1024 * 1024)
-	sizeScore := min(int(sizeMB/20), 30)
-	score += sizeScore
-
-	age := time.Since(p.InstallDate)
-	if p.IsOrphan && age > 365*24*time.Hour {
-		score += 20
-	} else if p.IsOrphan && age > 180*24*time.Hour {
-		score += 10
-	}
-
-	if p.HasService && p.ServiceStatus == "active" {
-		score -= 10
-	}
-
-	if score < 0 {
-		score = 0
-	}
-	if score > 100 {
-		score = 100
-	}
-	return score
-}
-
-func (p *Package) HealthBadge() string {
-	switch {
-	case p.HealthScore >= 70:
-		return "🔴"
-	case p.HealthScore >= 40:
-		return "🟡"
-	default:
-		return "🟢"
-	}
 }
 
 func (p *Package) ReasonShort() string {

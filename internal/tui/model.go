@@ -32,6 +32,14 @@ const (
 	panelDetail
 )
 
+type sortMode int
+
+const (
+	sortByName sortMode = iota
+	sortBySize
+	sortByDate
+)
+
 type Model struct {
 	width  int
 	height int
@@ -46,6 +54,7 @@ type Model struct {
 	listCursor   int
 	listOffset   int
 	loading      bool
+	sortMode     sortMode
 
 	// search
 	searching   bool
@@ -167,16 +176,33 @@ func loadOrphans() tea.Cmd {
 
 func (m *Model) applyFilter() {
 	q := m.searchInput.Value()
-	if q == "" {
-		m.filteredPkgs = m.allPkgs
-		return
-	}
 	var out []pm.Package
-	for _, p := range m.allPkgs {
-		if contains(p.Name, q) || contains(p.Description, q) {
-			out = append(out, p)
+	if q == "" {
+		out = make([]pm.Package, len(m.allPkgs))
+		copy(out, m.allPkgs)
+	} else {
+		for _, p := range m.allPkgs {
+			if contains(p.Name, q) || contains(p.Description, q) {
+				out = append(out, p)
+			}
 		}
 	}
+
+	switch m.sortMode {
+	case sortBySize:
+		sort.Slice(out, func(i, j int) bool {
+			return out[i].Size > out[j].Size
+		})
+	case sortByDate:
+		sort.Slice(out, func(i, j int) bool {
+			return out[i].InstallDate.After(out[j].InstallDate)
+		})
+	case sortByName:
+		sort.Slice(out, func(i, j int) bool {
+			return out[i].Name < out[j].Name
+		})
+	}
+
 	m.filteredPkgs = out
 	if m.listCursor >= len(m.filteredPkgs) {
 		m.listCursor = max(0, len(m.filteredPkgs)-1)

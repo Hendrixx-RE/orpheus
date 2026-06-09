@@ -16,43 +16,12 @@ func NewPacman() *Pacman { return &Pacman{} }
 func (p *Pacman) Name() string { return "pacman" }
 
 func (p *Pacman) ListAll() ([]Package, error) {
-	allOut, err := runCmd("pacman", "-Q")
+	allOut, err := runCmd("pacman", "-Qi")
 	if err != nil {
 		return nil, err
 	}
 
-	explicitOut, err := runCmd("pacman", "-Qe")
-	if err != nil {
-		return nil, err
-	}
-
-	orphanOut, _ := runCmdAllowExit1("pacman", "-Qdt")
-
-	explicit := parseNameSet(explicitOut)
-	orphans := parseNameSet(orphanOut)
-
-	var pkgs []Package
-	scanner := bufio.NewScanner(bytes.NewReader(allOut))
-	for scanner.Scan() {
-		parts := strings.Fields(scanner.Text())
-		if len(parts) < 2 {
-			continue
-		}
-		name, ver := parts[0], parts[1]
-		reason := "Installed as a dependency"
-		if explicit[name] {
-			reason = "Explicitly installed"
-		}
-		pkg := Package{
-			Name:          name,
-			Version:       ver,
-			IsOrphan:      orphans[name],
-			InstallReason: reason,
-		}
-		pkg.HealthScore = pkg.ComputeHealth()
-		pkgs = append(pkgs, pkg)
-	}
-	return pkgs, nil
+	return parsePacmanQi(allOut)
 }
 
 func (p *Pacman) GetPackage(name string) (*Package, error) {
@@ -83,7 +52,6 @@ func parsePacmanQi(data []byte) ([]Package, error) {
 	finalize := func() {
 		if cur != nil {
 			cur.IsOrphan = cur.InstallReason != "Explicitly installed" && len(cur.RequiredBy) == 0
-			cur.HealthScore = cur.ComputeHealth()
 			pkgs = append(pkgs, *cur)
 			cur = nil
 		}

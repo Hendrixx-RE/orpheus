@@ -36,10 +36,6 @@ var (
 	styleOrphan   = lipgloss.NewStyle().Foreground(colorRed)
 	styleExplicit = lipgloss.NewStyle().Foreground(colorCyan)
 
-	styleHealthHigh = lipgloss.NewStyle().Foreground(colorRed)
-	styleHealthMid  = lipgloss.NewStyle().Foreground(colorOrange)
-	styleHealthLow  = lipgloss.NewStyle().Foreground(colorGreen)
-
 	styleKey     = lipgloss.NewStyle().Foreground(colorYellow).Bold(true)
 	styleVal     = lipgloss.NewStyle().Foreground(colorText)
 	styleDimmed  = lipgloss.NewStyle().Foreground(colorMuted)
