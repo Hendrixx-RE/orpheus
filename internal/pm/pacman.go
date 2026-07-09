@@ -21,7 +21,31 @@ func (p *Pacman) ListAll() ([]Package, error) {
 		return nil, err
 	}
 
-	return parsePacmanQi(allOut)
+	pkgs, err := parsePacmanQi(allOut)
+	if err != nil {
+		return nil, err
+	}
+
+	// Identify system packages (base and base-devel dependencies)
+	systemNames := make(map[string]bool)
+	systemNames["base"] = true
+	systemNames["base-devel"] = true
+
+	for _, pkg := range pkgs {
+		if pkg.Name == "base" || pkg.Name == "base-devel" {
+			for _, d := range pkg.Dependencies {
+				systemNames[d] = true
+			}
+		}
+	}
+
+	for i := range pkgs {
+		if systemNames[pkgs[i].Name] {
+			pkgs[i].IsSystem = true
+		}
+	}
+
+	return pkgs, nil
 }
 
 func (p *Pacman) GetPackage(name string) (*Package, error) {

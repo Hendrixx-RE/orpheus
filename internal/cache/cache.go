@@ -1,3 +1,4 @@
+// Package cache defines how the already analysed packages are stored
 package cache
 
 import (

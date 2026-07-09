@@ -1,3 +1,4 @@
+// Package pm provides common structures and interfaces for package management.
 package pm
 
 import (
@@ -22,6 +23,7 @@ type Package struct {
 	HasService    bool
 	ServiceName   string
 	ServiceStatus string
+	IsSystem      bool
 }
 
 type Manager interface {

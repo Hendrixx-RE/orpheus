@@ -42,6 +42,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.allPkgs = msg.pkgs
 		m.filteredPkgs = msg.pkgs
+		m.computeExcluded()
 		m.applyFilter()
 		return m, nil
 
@@ -149,14 +150,22 @@ func (m Model) handleKey(key string) (Model, tea.Cmd) {
 			return m, loadServices()
 		}
 		return m, nil
+	case "4":
+		m.activeView = viewWhitelist
+		m.focusedPanel = panelList
+		m.applyFilter()
+		return m, nil
 	case "tab":
-		m.activeView = (m.activeView + 1) % 3
+		m.activeView = (m.activeView + 1) % 4
 		m.focusedPanel = panelList
 		if m.activeView == viewCleanup && !m.cleanupLoaded {
 			return m, loadOrphans()
 		}
 		if m.activeView == viewServices && !m.svcLoaded {
 			return m, loadServices()
+		}
+		if m.activeView == viewWhitelist {
+			m.applyFilter()
 		}
 		return m, nil
 	}
@@ -277,6 +286,33 @@ func (m Model) handleListKey(key string) (Model, tea.Cmd) {
 	case "s":
 		if m.activeView == viewPackages {
 			m.sortMode = (m.sortMode + 1) % 3
+			m.applyFilter()
+		}
+		m.lastKey = ""
+	case "f":
+		if m.activeView == viewPackages {
+			m.filterReason = (m.filterReason + 1) % 3
+			m.applyFilter()
+		}
+		m.lastKey = ""
+	case "v":
+		if m.activeView == viewPackages {
+			m.hideSystem = !m.hideSystem
+			m.applyFilter()
+		}
+		m.lastKey = ""
+	case "w":
+		list := m.currentList()
+		cursor := m.currentCursor()
+		if cursor < len(list) {
+			pkg := list[cursor]
+			if m.whitelist[pkg.Name] {
+				delete(m.whitelist, pkg.Name)
+			} else {
+				m.whitelist[pkg.Name] = true
+			}
+			m.computeExcluded()
+			m.saveWhitelist()
 			m.applyFilter()
 		}
 		m.lastKey = ""

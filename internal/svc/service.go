@@ -16,8 +16,8 @@ type Service struct {
 	OwnerPkg    string
 }
 
-func (s *Service) IsActive() bool   { return s.ActiveState == "active" }
-func (s *Service) IsFailed() bool   { return s.ActiveState == "failed" }
+func (s *Service) IsActive() bool { return s.ActiveState == "active" }
+func (s *Service) IsFailed() bool { return s.ActiveState == "failed" }
 func (s *Service) StatusBadge() string {
 	switch s.ActiveState {
 	case "active":

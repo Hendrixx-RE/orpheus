@@ -1,7 +1,11 @@
+// Package tui handles the tui
 package tui
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"sort"
 
 	"orpheus/internal/ai"
@@ -22,6 +26,7 @@ const (
 	viewPackages viewID = iota
 	viewCleanup
 	viewServices
+	viewWhitelist
 )
 
 type panelID int
@@ -40,6 +45,14 @@ const (
 	sortByDate
 )
 
+type filterReason int
+
+const (
+	filterAll filterReason = iota
+	filterExplicit
+	filterDeps
+)
+
 type Model struct {
 	width  int
 	height int
@@ -49,12 +62,16 @@ type Model struct {
 	focusedPanel panelID
 
 	// packages
-	allPkgs      []pm.Package
-	filteredPkgs []pm.Package
-	listCursor   int
-	listOffset   int
-	loading      bool
-	sortMode     sortMode
+	allPkgs             []pm.Package
+	filteredPkgs        []pm.Package
+	listCursor          int
+	listOffset          int
+	loading             bool
+	sortMode            sortMode
+	hideSystem          bool
+	filterReason        filterReason
+	whitelist           map[string]bool
+	excludedByWhitelist map[string]bool
 
 	// search
 	searching   bool
@@ -100,7 +117,7 @@ func New() Model {
 
 	c, _ := cache.New()
 
-	return Model{
+	m := Model{
 		spinner:     sp,
 		searchInput: ti,
 		detailVP:    vp,
@@ -108,6 +125,60 @@ func New() Model {
 		mgr:         pm.NewPacman(),
 		aiSvc:       ai.New(),
 		cache:       c,
+		whitelist:   make(map[string]bool),
+	}
+	m.loadWhitelist()
+	return m
+}
+
+func (m *Model) loadWhitelist() {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		dir = os.TempDir()
+	}
+	path := filepath.Join(dir, "orpheus", "whitelist.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	json.Unmarshal(data, &m.whitelist)
+}
+
+func (m *Model) saveWhitelist() {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		dir = os.TempDir()
+	}
+	path := filepath.Join(dir, "orpheus", "whitelist.json")
+	data, _ := json.Marshal(m.whitelist)
+	os.WriteFile(path, data, 0o644)
+}
+
+func (m *Model) computeExcluded() {
+	m.excludedByWhitelist = make(map[string]bool)
+	if len(m.whitelist) == 0 {
+		return
+	}
+
+	// Build dependency map
+	depsMap := make(map[string][]string)
+	for _, p := range m.allPkgs {
+		depsMap[p.Name] = p.Dependencies
+	}
+
+	var visit func(string)
+	visit = func(name string) {
+		if m.excludedByWhitelist[name] {
+			return
+		}
+		m.excludedByWhitelist[name] = true
+		for _, d := range depsMap[name] {
+			visit(d)
+		}
+	}
+
+	for name := range m.whitelist {
+		visit(name)
 	}
 }
 
@@ -177,12 +248,29 @@ func loadOrphans() tea.Cmd {
 func (m *Model) applyFilter() {
 	q := m.searchInput.Value()
 	var out []pm.Package
-	if q == "" {
-		out = make([]pm.Package, len(m.allPkgs))
-		copy(out, m.allPkgs)
-	} else {
+
+	for _, p := range m.allPkgs {
+		if m.activeView != viewWhitelist && m.excludedByWhitelist[p.Name] {
+			continue
+		}
+		if m.hideSystem && p.IsSystem {
+			continue
+		}
+		if m.filterReason == filterExplicit && p.InstallReason != "Explicitly installed" {
+			continue
+		}
+		if m.filterReason == filterDeps && p.InstallReason == "Explicitly installed" {
+			continue
+		}
+		if q == "" || contains(p.Name, q) || contains(p.Description, q) {
+			out = append(out, p)
+		}
+	}
+
+	if m.activeView == viewWhitelist {
+		out = make([]pm.Package, 0)
 		for _, p := range m.allPkgs {
-			if contains(p.Name, q) || contains(p.Description, q) {
+			if m.whitelist[p.Name] {
 				out = append(out, p)
 			}
 		}

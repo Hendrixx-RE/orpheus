@@ -1,3 +1,4 @@
+// Package ai used for the ai integration
 package ai
 
 import (
@@ -47,14 +48,14 @@ func (a *Analyzer) Analyze(ctx context.Context, pkg *pm.Package) (string, error)
 		"messages": []map[string]string{
 			{
 				"role":    "system",
-				"content": "You are a Linux package analyzer. Give concise, honest analysis. No markdown headers or bullet points. Plain text only. End with exactly one line: Verdict: Keep / Review / Safe to remove.",
+				"content": "You are a Linux package analyzer. Give concise, honest analysis. No markdown headers or bullet points. Plain text only.",
 			},
 			{
 				"role":    "user",
 				"content": buildPrompt(pkg),
 			},
 		},
-		"max_tokens": 600,
+		"max_tokens": 400,
 	})
 
 	backoff := 5 * time.Second
@@ -164,7 +165,6 @@ func buildPrompt(pkg *pm.Package) string {
 	return fmt.Sprintf(`Analyze this Linux package in 3-4 sentences:
 1. Its purpose on this system
 2. Whether it's still useful (consider orphan status and dependents)
-3. Blast radius if removed
 
 Package: %s %s
 Description: %s
@@ -173,9 +173,7 @@ Installed: %s
 Size: %s
 Orphan: %s
 Required by: %s
-Depends on: %s
-
-End with exactly: Verdict: [Keep / Review / Safe to remove]`,
+Depends on: %s`,
 		pkg.Name, pkg.Version,
 		pkg.Description,
 		pkg.InstallReason,
