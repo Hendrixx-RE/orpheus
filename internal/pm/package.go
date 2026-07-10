@@ -17,9 +17,7 @@ type Package struct {
 	InstallReason string
 	Dependencies  []string
 	OptDeps       []string
-	RequiredBy    []string
 	OptFor        []string
-	IsOrphan      bool
 	HasService    bool
 	ServiceName   string
 	ServiceStatus string
@@ -30,16 +28,6 @@ type Manager interface {
 	Name() string
 	ListAll() ([]Package, error)
 	GetPackage(name string) (*Package, error)
-}
-
-func (p *Package) ReasonShort() string {
-	if p.IsOrphan {
-		return "ORPHAN"
-	}
-	if p.InstallReason == "Explicitly installed" {
-		return "EXPLICIT"
-	}
-	return "DEP"
 }
 
 func (p *Package) SizeMB() float64 {

@@ -25,7 +25,6 @@ type svcsLoadedMsg struct {
 	err  error
 }
 
-type orphansLoadedMsg struct {
-	pkgs []pm.Package
-	err  error
+type pkgRemovedMsg struct {
+	err error
 }

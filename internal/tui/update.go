@@ -1,9 +1,9 @@
 package tui
 
 import (
+	"fmt"
+	"os/exec"
 	"strings"
-
-	"orpheus/internal/pm"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -28,8 +28,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
-		// re-render detail content to animate the spinner while AI is loading
-		if m.aiLoading && m.selectedPkg != nil {
+		// re-render detail content to animate the spinner while AI or removing is loading
+		if (m.aiLoading || m.removingLoading) && m.selectedPkg != nil {
 			m.detailVP.SetContent(m.buildDetailContent())
 		}
 		return m, cmd
@@ -42,7 +42,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.allPkgs = msg.pkgs
 		m.filteredPkgs = msg.pkgs
-		m.computeExcluded()
 		m.applyFilter()
 		return m, nil
 
@@ -66,17 +65,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case pkgRemovedMsg:
+		m.removingLoading = false
+		if msg.err != nil {
+			m.removeErr = msg.err.Error()
+			if m.selectedPkg != nil {
+				m.detailVP.SetContent(m.buildDetailContent())
+			}
+			return m, nil
+		}
+		m.loading = true
+		m.selectedPkg = nil
+		m.focusedPanel = panelList
+		return m, loadPackages(m.mgr)
+
 	case svcsLoadedMsg:
 		m.svcLoaded = true
 		if msg.err == nil {
 			m.services = msg.svcs
-		}
-		return m, nil
-
-	case orphansLoadedMsg:
-		m.cleanupLoaded = true
-		if msg.err == nil {
-			m.cleanupPkgs = msg.pkgs
 		}
 		return m, nil
 
@@ -86,8 +92,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key == "ctrl+c" {
 			return m, tea.Quit
 		}
-		if key == "q" && !m.searching {
+		if key == "q" && !m.searching && !m.askingPassword {
 			return m, tea.Quit
+		}
+
+		if m.askingPassword {
+			switch key {
+			case "esc":
+				m.askingPassword = false
+				m.passwordInput.Blur()
+				m.passwordInput.SetValue("")
+				m.detailVP.SetContent(m.buildDetailContent())
+				return m, nil
+			case "enter":
+				m.askingPassword = false
+				m.removingLoading = true
+				m.removeErr = ""
+				pw := m.passwordInput.Value()
+				m.passwordInput.Blur()
+				m.passwordInput.SetValue("")
+				m.detailVP.SetContent(m.buildDetailContent())
+				return m, removePackageCmdAsync(m.selectedPkg.Name, pw)
+			default:
+				var cmd tea.Cmd
+				m.passwordInput, cmd = m.passwordInput.Update(msg)
+				m.detailVP.SetContent(m.buildDetailContent())
+				return m, cmd
+			}
 		}
 
 		if m.searching {
@@ -137,36 +168,22 @@ func (m Model) handleKey(key string) (Model, tea.Cmd) {
 		m.focusedPanel = panelList
 		return m, nil
 	case "2":
-		m.activeView = viewCleanup
-		m.focusedPanel = panelList
-		if !m.cleanupLoaded {
-			return m, loadOrphans()
-		}
-		return m, nil
-	case "3":
 		m.activeView = viewServices
 		m.focusedPanel = panelList
 		if !m.svcLoaded {
 			return m, loadServices()
 		}
 		return m, nil
-	case "4":
-		m.activeView = viewWhitelist
-		m.focusedPanel = panelList
-		m.applyFilter()
-		return m, nil
 	case "tab":
-		m.activeView = (m.activeView + 1) % 4
+		if m.activeView == viewPackages {
+			m.activeView = viewServices
+			if !m.svcLoaded {
+				return m, loadServices()
+			}
+		} else {
+			m.activeView = viewPackages
+		}
 		m.focusedPanel = panelList
-		if m.activeView == viewCleanup && !m.cleanupLoaded {
-			return m, loadOrphans()
-		}
-		if m.activeView == viewServices && !m.svcLoaded {
-			return m, loadServices()
-		}
-		if m.activeView == viewWhitelist {
-			m.applyFilter()
-		}
 		return m, nil
 	}
 
@@ -203,16 +220,32 @@ func (m Model) handleDetailKey(key string) (Model, tea.Cmd) {
 			m.aiErr = ""
 			m.detailVP.SetContent(m.buildDetailContent())
 			m.lastKey = ""
-			return m, analyzePackage(m.aiSvc, m.cache, m.selectedPkg)
+			
+			var explicitNames []string
+			for _, p := range m.allPkgs {
+				if p.InstallReason == "Explicitly installed" {
+					explicitNames = append(explicitNames, p.Name)
+				}
+			}
+			return m, analyzePackage(m.aiSvc, m.cache, m.selectedPkg, explicitNames)
+		}
+	case "x":
+		if m.selectedPkg != nil && !m.removingLoading && !m.aiLoading {
+			m.askingPassword = true
+			m.passwordInput.Focus()
+			m.passwordInput.SetValue("")
+			m.detailVP.SetContent(m.buildDetailContent())
+			m.lastKey = ""
+			return m, nil
 		}
 	case "j", "down":
-		m.detailVP.LineDown(1)
+		m.detailVP.ScrollDown(1)
 	case "k", "up":
-		m.detailVP.LineUp(1)
+		m.detailVP.ScrollUp(1)
 	case "ctrl+d":
-		m.detailVP.HalfViewDown()
+		m.detailVP.HalfPageDown()
 	case "ctrl+u":
-		m.detailVP.HalfViewUp()
+		m.detailVP.HalfPageUp()
 	case "G":
 		m.detailVP.GotoBottom()
 		m.lastKey = ""
@@ -234,12 +267,16 @@ func (m Model) handleDetailKey(key string) (Model, tea.Cmd) {
 func (m Model) handleSidebarKey(key string) (Model, tea.Cmd) {
 	switch key {
 	case "j", "down":
-		m.activeView = (m.activeView + 1) % 3
-	case "k", "up":
-		if m.activeView == 0 {
-			m.activeView = 2
+		if m.activeView == viewPackages {
+			m.activeView = viewServices
 		} else {
-			m.activeView--
+			m.activeView = viewPackages
+		}
+	case "k", "up":
+		if m.activeView == viewPackages {
+			m.activeView = viewServices
+		} else {
+			m.activeView = viewPackages
 		}
 	case "l", "right", "enter":
 		m.focusedPanel = panelList
@@ -286,33 +323,6 @@ func (m Model) handleListKey(key string) (Model, tea.Cmd) {
 	case "s":
 		if m.activeView == viewPackages {
 			m.sortMode = (m.sortMode + 1) % 3
-			m.applyFilter()
-		}
-		m.lastKey = ""
-	case "f":
-		if m.activeView == viewPackages {
-			m.filterReason = (m.filterReason + 1) % 3
-			m.applyFilter()
-		}
-		m.lastKey = ""
-	case "v":
-		if m.activeView == viewPackages {
-			m.hideSystem = !m.hideSystem
-			m.applyFilter()
-		}
-		m.lastKey = ""
-	case "w":
-		list := m.currentList()
-		cursor := m.currentCursor()
-		if cursor < len(list) {
-			pkg := list[cursor]
-			if m.whitelist[pkg.Name] {
-				delete(m.whitelist, pkg.Name)
-			} else {
-				m.whitelist[pkg.Name] = true
-			}
-			m.computeExcluded()
-			m.saveWhitelist()
 			m.applyFilter()
 		}
 		m.lastKey = ""
@@ -384,7 +394,7 @@ func (m Model) buildDetailContent() string {
 	if !p.InstallDate.IsZero() {
 		write("Installed", styleVal.Render(p.InstallDate.Format("Jan 02, 2006")))
 	}
-	write("Reason", reasonLabel(p))
+	write("Reason", styleExplicit.Render("Explicit"))
 	if p.Architecture != "" {
 		write("Arch", styleDimmed.Render(p.Architecture))
 	}
@@ -398,16 +408,19 @@ func (m Model) buildDetailContent() string {
 		sb.WriteString(styleDimmed.Render("  "+wrapText(deps, m.detailWidth()-10)) + "\n")
 	}
 
-	if len(p.RequiredBy) > 0 {
-		sb.WriteString("\n" + styleKey.Render("Required By") + "\n")
-		sb.WriteString(styleExplicit.Render("  "+strings.Join(p.RequiredBy, "  ")) + "\n")
-	}
-
 	sb.WriteString("\n" + styleDivider.Render(strings.Repeat("─", m.detailWidth()-6)) + "\n")
-	sb.WriteString(styleAILabel.Render("AI Analysis") + "\n")
+	sb.WriteString(styleAILabel.Render("Action Status") + "\n")
 	sb.WriteString(styleDivider.Render(strings.Repeat("─", m.detailWidth()-6)) + "\n\n")
 
 	switch {
+	case m.askingPassword:
+		sb.WriteString(styleVal.Render("Enter sudo password to remove "+p.Name+":") + "\n")
+		sb.WriteString(m.passwordInput.View() + "\n")
+		sb.WriteString(styleDimmed.Render("(Press Esc to cancel)") + "\n")
+	case m.removingLoading:
+		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Removing package...") + "\n")
+	case m.removeErr != "":
+		sb.WriteString(styleOrphan.Render("Removal failed: " + m.removeErr) + "\n")
 	case m.aiLoading:
 		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Analyzing...") + "\n")
 	case m.aiErr != "":
@@ -419,20 +432,10 @@ func (m Model) buildDetailContent() string {
 			sb.WriteString(styleVerdict.Render(verdict) + "\n")
 		}
 	default:
-		sb.WriteString(styleDimmed.Render("Press a to analyze with AI") + "\n")
+		sb.WriteString(styleDimmed.Render("Press a to analyze, x to remove") + "\n")
 	}
 
 	return sb.String()
-}
-
-func reasonLabel(p *pm.Package) string {
-	if p.IsOrphan {
-		return styleOrphan.Render("ORPHAN — no longer required")
-	}
-	if p.InstallReason == "Explicitly installed" {
-		return styleExplicit.Render("Explicit")
-	}
-	return styleDimmed.Render("Dependency")
 }
 
 func splitVerdict(text string) (string, string) {
@@ -500,4 +503,16 @@ func minI(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func removePackageCmdAsync(name, password string) tea.Cmd {
+	return func() tea.Msg {
+		c := exec.Command("sudo", "-S", "pacman", "-Rns", "--noconfirm", name)
+		c.Stdin = strings.NewReader(password + "\n")
+		out, err := c.CombinedOutput()
+		if err != nil {
+			return pkgRemovedMsg{err: fmt.Errorf("%v: %s", err, out)}
+		}
+		return pkgRemovedMsg{err: nil}
+	}
 }

@@ -37,7 +37,7 @@ func New() *Analyzer {
 	}
 }
 
-func (a *Analyzer) Analyze(ctx context.Context, pkg *pm.Package) (string, error) {
+func (a *Analyzer) Analyze(ctx context.Context, pkg *pm.Package, explicitNames []string) (string, error) {
 	apiKey := os.Getenv("GROQ_API_KEY")
 	if apiKey == "" {
 		return "", fmt.Errorf("GROQ_API_KEY not set — get a free key at console.groq.com")
@@ -52,10 +52,10 @@ func (a *Analyzer) Analyze(ctx context.Context, pkg *pm.Package) (string, error)
 			},
 			{
 				"role":    "user",
-				"content": buildPrompt(pkg),
+				"content": buildPrompt(pkg, explicitNames),
 			},
 		},
-		"max_tokens": 400,
+		"max_tokens": 300,
 	})
 
 	backoff := 5 * time.Second
@@ -134,7 +134,7 @@ func extractError(data []byte) string {
 	return resp.Error.Message
 }
 
-func buildPrompt(pkg *pm.Package) string {
+func buildPrompt(pkg *pm.Package, explicitNames []string) string {
 	deps := "none"
 	if len(pkg.Dependencies) > 0 {
 		d := pkg.Dependencies
@@ -143,44 +143,31 @@ func buildPrompt(pkg *pm.Package) string {
 		}
 		deps = strings.Join(d, ", ")
 	}
-	reqBy := "nothing"
-	if len(pkg.RequiredBy) > 0 {
-		r := pkg.RequiredBy
-		if len(r) > 6 {
-			r = r[:6]
-		}
-		reqBy = strings.Join(r, ", ")
-	}
-
-	orphanStr := "No"
-	if pkg.IsOrphan {
-		orphanStr = "Yes — installed as a dependency but nothing requires it anymore"
-	}
 
 	installDate := "unknown"
 	if !pkg.InstallDate.IsZero() {
 		installDate = pkg.InstallDate.Format("Jan 02, 2006")
 	}
 
+	explicitStr := strings.Join(explicitNames, ", ")
+
 	return fmt.Sprintf(`Analyze this Linux package in 3-4 sentences:
 1. Its purpose on this system
-2. Whether it's still useful (consider orphan status and dependents)
-
+2. Why the user might have installed this specific package, given the other explicit packages on their system
+3. What would happen if the user removed this package
 Package: %s %s
 Description: %s
 Install reason: %s
 Installed: %s
 Size: %s
-Orphan: %s
-Required by: %s
-Depends on: %s`,
+Depends on: %s
+All explicit packages on this system: %s`,
 		pkg.Name, pkg.Version,
 		pkg.Description,
 		pkg.InstallReason,
 		installDate,
 		pkg.FormatSize(),
-		orphanStr,
-		reqBy,
 		deps,
+		explicitStr,
 	)
 }

@@ -1,3 +1,4 @@
+// Package svc manages the services section
 package svc
 
 import (

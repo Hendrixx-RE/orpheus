@@ -75,7 +75,6 @@ func parsePacmanQi(data []byte) ([]Package, error) {
 
 	finalize := func() {
 		if cur != nil {
-			cur.IsOrphan = cur.InstallReason != "Explicitly installed" && len(cur.RequiredBy) == 0
 			pkgs = append(pkgs, *cur)
 			cur = nil
 		}
@@ -90,7 +89,6 @@ func parsePacmanQi(data []byte) ([]Package, error) {
 			continue
 		}
 
-		// Continuation line (starts with whitespace — pacman wraps long fields)
 		if len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
 			if cur != nil && lastKey != "" {
 				val := strings.TrimSpace(line)
@@ -141,10 +139,6 @@ func parsePacmanQi(data []byte) ([]Package, error) {
 			if val != "None" {
 				cur.OptDeps = append(cur.OptDeps, parseOptDepLine(val)...)
 			}
-		case "Required By":
-			if val != "None" {
-				cur.RequiredBy = append(cur.RequiredBy, strings.Fields(val)...)
-			}
 		case "Optional For":
 			if val != "None" {
 				cur.OptFor = append(cur.OptFor, strings.Fields(val)...)
@@ -161,8 +155,6 @@ func appendField(cur *Package, key, val string) {
 		cur.Dependencies = append(cur.Dependencies, strings.Fields(val)...)
 	case "Optional Deps":
 		cur.OptDeps = append(cur.OptDeps, parseOptDepLine(val)...)
-	case "Required By":
-		cur.RequiredBy = append(cur.RequiredBy, strings.Fields(val)...)
 	case "Optional For":
 		cur.OptFor = append(cur.OptFor, strings.Fields(val)...)
 	}
@@ -213,18 +205,6 @@ func parseDate(s string) time.Time {
 		}
 	}
 	return time.Time{}
-}
-
-func parseNameSet(data []byte) map[string]bool {
-	set := make(map[string]bool)
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	for scanner.Scan() {
-		parts := strings.Fields(scanner.Text())
-		if len(parts) >= 1 {
-			set[parts[0]] = true
-		}
-	}
-	return set
 }
 
 func runCmd(name string, args ...string) ([]byte, error) {

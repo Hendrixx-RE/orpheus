@@ -3,9 +3,6 @@ package tui
 
 import (
 	"context"
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"sort"
 
 	"orpheus/internal/ai"
@@ -24,9 +21,7 @@ type viewID int
 
 const (
 	viewPackages viewID = iota
-	viewCleanup
 	viewServices
-	viewWhitelist
 )
 
 type panelID int
@@ -45,14 +40,6 @@ const (
 	sortByDate
 )
 
-type filterReason int
-
-const (
-	filterAll filterReason = iota
-	filterExplicit
-	filterDeps
-)
-
 type Model struct {
 	width  int
 	height int
@@ -62,16 +49,12 @@ type Model struct {
 	focusedPanel panelID
 
 	// packages
-	allPkgs             []pm.Package
-	filteredPkgs        []pm.Package
-	listCursor          int
-	listOffset          int
-	loading             bool
-	sortMode            sortMode
-	hideSystem          bool
-	filterReason        filterReason
-	whitelist           map[string]bool
-	excludedByWhitelist map[string]bool
+	allPkgs      []pm.Package
+	filteredPkgs []pm.Package
+	listCursor   int
+	listOffset   int
+	loading      bool
+	sortMode     sortMode
 
 	// search
 	searching   bool
@@ -84,10 +67,11 @@ type Model struct {
 	aiLoading   bool
 	aiErr       string
 
-	// cleanup view
-	cleanupPkgs   []pm.Package
-	cleanupCursor int
-	cleanupLoaded bool
+	// removal state
+	askingPassword  bool
+	removingLoading bool
+	removeErr       string
+	passwordInput   textinput.Model
 
 	// services
 	services  []svc.Service
@@ -113,72 +97,25 @@ func New() Model {
 	ti.Placeholder = "search packages..."
 	ti.CharLimit = 64
 
+	pi := textinput.New()
+	pi.Placeholder = "password"
+	pi.EchoMode = textinput.EchoPassword
+	pi.EchoCharacter = '•'
+	pi.CharLimit = 64
+
 	vp := viewport.New(0, 0)
 
 	c, _ := cache.New()
 
-	m := Model{
-		spinner:     sp,
-		searchInput: ti,
-		detailVP:    vp,
-		loading:     true,
+	return Model{
+		spinner:       sp,
+		searchInput:   ti,
+		passwordInput: pi,
+		detailVP:      vp,
+		loading:       true,
 		mgr:         pm.NewPacman(),
 		aiSvc:       ai.New(),
 		cache:       c,
-		whitelist:   make(map[string]bool),
-	}
-	m.loadWhitelist()
-	return m
-}
-
-func (m *Model) loadWhitelist() {
-	dir, err := os.UserCacheDir()
-	if err != nil {
-		dir = os.TempDir()
-	}
-	path := filepath.Join(dir, "orpheus", "whitelist.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return
-	}
-	json.Unmarshal(data, &m.whitelist)
-}
-
-func (m *Model) saveWhitelist() {
-	dir, err := os.UserCacheDir()
-	if err != nil {
-		dir = os.TempDir()
-	}
-	path := filepath.Join(dir, "orpheus", "whitelist.json")
-	data, _ := json.Marshal(m.whitelist)
-	os.WriteFile(path, data, 0o644)
-}
-
-func (m *Model) computeExcluded() {
-	m.excludedByWhitelist = make(map[string]bool)
-	if len(m.whitelist) == 0 {
-		return
-	}
-
-	// Build dependency map
-	depsMap := make(map[string][]string)
-	for _, p := range m.allPkgs {
-		depsMap[p.Name] = p.Dependencies
-	}
-
-	var visit func(string)
-	visit = func(name string) {
-		if m.excludedByWhitelist[name] {
-			return
-		}
-		m.excludedByWhitelist[name] = true
-		for _, d := range depsMap[name] {
-			visit(d)
-		}
-	}
-
-	for name := range m.whitelist {
-		visit(name)
 	}
 }
 
@@ -205,13 +142,13 @@ func loadPackageDetail(mgr pm.Manager, name string) tea.Cmd {
 	}
 }
 
-func analyzePackage(a *ai.Analyzer, c *cache.Cache, pkg *pm.Package) tea.Cmd {
+func analyzePackage(a *ai.Analyzer, c *cache.Cache, pkg *pm.Package, explicitNames []string) tea.Cmd {
 	return func() tea.Msg {
 		key := pkg.Name + "@" + pkg.Version
 		if text, ok := c.Get(key); ok {
 			return aiAnalysisMsg{text: text}
 		}
-		text, err := a.Analyze(context.Background(), pkg)
+		text, err := a.Analyze(context.Background(), pkg, explicitNames)
 		if err != nil {
 			return aiAnalysisMsg{err: err}
 		}
@@ -230,19 +167,6 @@ func loadServices() tea.Cmd {
 	}
 }
 
-func loadOrphans() tea.Cmd {
-	return func() tea.Msg {
-		pkgs, err := pm.GetOrphansDetailed()
-		if err != nil {
-			return orphansLoadedMsg{err: err}
-		}
-		sort.Slice(pkgs, func(i, j int) bool {
-			return pkgs[i].Size > pkgs[j].Size
-		})
-		return orphansLoadedMsg{pkgs: pkgs}
-	}
-}
-
 // helpers
 
 func (m *Model) applyFilter() {
@@ -250,29 +174,11 @@ func (m *Model) applyFilter() {
 	var out []pm.Package
 
 	for _, p := range m.allPkgs {
-		if m.activeView != viewWhitelist && m.excludedByWhitelist[p.Name] {
-			continue
-		}
-		if m.hideSystem && p.IsSystem {
-			continue
-		}
-		if m.filterReason == filterExplicit && p.InstallReason != "Explicitly installed" {
-			continue
-		}
-		if m.filterReason == filterDeps && p.InstallReason == "Explicitly installed" {
+		if p.InstallReason != "Explicitly installed" {
 			continue
 		}
 		if q == "" || contains(p.Name, q) || contains(p.Description, q) {
 			out = append(out, p)
-		}
-	}
-
-	if m.activeView == viewWhitelist {
-		out = make([]pm.Package, 0)
-		for _, p := range m.allPkgs {
-			if m.whitelist[p.Name] {
-				out = append(out, p)
-			}
 		}
 	}
 
@@ -298,16 +204,10 @@ func (m *Model) applyFilter() {
 }
 
 func (m *Model) currentList() []pm.Package {
-	if m.activeView == viewCleanup {
-		return m.cleanupPkgs
-	}
 	return m.filteredPkgs
 }
 
 func (m *Model) currentCursor() int {
-	if m.activeView == viewCleanup {
-		return m.cleanupCursor
-	}
 	return m.listCursor
 }
 
@@ -320,21 +220,13 @@ func (m *Model) moveCursor(delta int) {
 	if n == 0 {
 		return
 	}
-	if m.activeView == viewCleanup {
-		m.cleanupCursor = clamp(m.cleanupCursor+delta, 0, n-1)
-	} else {
-		m.listCursor = clamp(m.listCursor+delta, 0, n-1)
-		m.ensureVisible()
-	}
+	m.listCursor = clamp(m.listCursor+delta, 0, n-1)
+	m.ensureVisible()
 }
 
 func (m *Model) jumpTop() {
-	if m.activeView == viewCleanup {
-		m.cleanupCursor = 0
-	} else {
-		m.listCursor = 0
-		m.listOffset = 0
-	}
+	m.listCursor = 0
+	m.listOffset = 0
 }
 
 func (m *Model) jumpBottom() {
@@ -342,12 +234,8 @@ func (m *Model) jumpBottom() {
 	if n == 0 {
 		return
 	}
-	if m.activeView == viewCleanup {
-		m.cleanupCursor = n - 1
-	} else {
-		m.listCursor = n - 1
-		m.ensureVisible()
-	}
+	m.listCursor = n - 1
+	m.ensureVisible()
 }
 
 func (m *Model) ensureVisible() {
@@ -364,7 +252,7 @@ func (m *Model) ensureVisible() {
 }
 
 func (m Model) listPanelHeight() int {
-	return m.height - 4 // borders + status bar + header
+	return m.height - 7 // panel height (m.height - 3) - borders (2) - title (1) - divider (1)
 }
 
 func (m Model) sidebarWidth() int { return 18 }

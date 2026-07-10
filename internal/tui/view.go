@@ -38,13 +38,11 @@ func (m Model) renderSidebar() string {
 		label string
 	}{
 		{viewPackages, "  ", "Packages"},
-		{viewCleanup, "  ", "Cleanup"},
 		{viewServices, "  ", "Services"},
-		{viewWhitelist, "  ", "Whitelist"},
 	}
 
 	for _, v := range views {
-		line := v.icon + v.label
+		var line string
 		if m.activeView == v.id {
 			line = styleSidebarActive.Render("> " + v.icon + v.label)
 		} else {
@@ -77,12 +75,8 @@ func (m Model) renderListPanel() string {
 	switch m.activeView {
 	case viewPackages:
 		sb.WriteString(m.renderPackageList(w, inner))
-	case viewCleanup:
-		sb.WriteString(m.renderCleanupList(w, inner))
 	case viewServices:
 		sb.WriteString(m.renderServicesList(w, inner))
-	case viewWhitelist:
-		sb.WriteString(m.renderWhitelistList(w, inner))
 	}
 
 	st := stylePanel
@@ -97,7 +91,7 @@ func (m Model) renderPackageList(w, h int) string {
 
 	// header
 	count := fmt.Sprintf("%d", len(m.filteredPkgs))
-	
+
 	var sortLabel string
 	switch m.sortMode {
 	case sortByName:
@@ -108,38 +102,11 @@ func (m Model) renderPackageList(w, h int) string {
 		sortLabel = "Date"
 	}
 	title := "Packages (" + count + ")  " + styleDimmed.Render("by "+sortLabel)
-	
-	switch m.filterReason {
-	case filterExplicit:
-		title += "  " + styleExplicit.Render("[Explicit]")
-	case filterDeps:
-		title += "  " + styleDimmed.Render("[Deps]")
-	}
-
-	if m.hideSystem {
-		title += "  " + styleOrphan.Render("User Only")
-	}
-	if len(m.whitelist) > 0 {
-		title += "  " + styleVerdict.Render("[Whitelist Active]")
-	}
 
 	if m.searching || m.searchInput.Value() != "" {
 		title = "Packages  " + styleAILabel.Render("/"+m.searchInput.Value()) + "  " + styleDimmed.Render("by "+sortLabel)
-
-		switch m.filterReason {
-		case filterExplicit:
-			title += "  " + styleExplicit.Render("[Explicit]")
-		case filterDeps:
-			title += "  " + styleDimmed.Render("[Deps]")
-		}
-
-		if m.hideSystem {
-			title += "  " + styleOrphan.Render("User Only")
-		}
-		if len(m.whitelist) > 0 {
-			title += "  " + styleVerdict.Render("[Whitelist Active]")
-		}
 	}
+
 	sb.WriteString(styleTitle.Render(title) + "\n")
 	sb.WriteString(styleDivider.Render(strings.Repeat("─", w-2)) + "\n")
 
@@ -174,105 +141,19 @@ func (m Model) renderPackageList(w, h int) string {
 }
 
 func renderPkgLine(p pm.Package, width int, selected bool) string {
-	badge := badgeFor(p)
-	
 	size := fmt.Sprintf("%-10s", p.FormatSize())
-
-	var reason string
-	switch p.ReasonShort() {
-	case "ORPHAN":
-		reason = styleOrphan.Render("ORPHAN")
-	case "EXPLICIT":
-		reason = styleExplicit.Render("EXPLIC")
-	default:
-		reason = styleDimmed.Render("DEP   ")
-	}
-
-	nameWidth := width - 23
+	nameWidth := width - 16
 	name := truncate(p.Name, nameWidth)
-
-	line := badge + " " + padRight(name, nameWidth) + " " + styleDimmed.Render(size) + " " + reason
 
 	if selected {
-		return styleSelected.Render(" " + line + " ")
-	}
-	return "  " + line
-}
-
-func badgeFor(p pm.Package) string {
-	if p.IsOrphan {
-		return styleOrphan.Render("●")
-	}
-	if p.InstallReason == "Explicitly installed" {
-		return styleExplicit.Render("●")
-	}
-	return styleDimmed.Render("●")
-}
-
-func (m Model) renderCleanupList(w, h int) string {
-	var sb strings.Builder
-	sb.WriteString(styleTitle.Render("Cleanup Queue") + "  " + styleDimmed.Render("ranked by size") + "\n")
-	sb.WriteString(styleDivider.Render(strings.Repeat("─", w-2)) + "\n")
-
-	if !m.cleanupLoaded {
-		sb.WriteString("\n  " + m.spinner.View() + " Scanning for orphans...\n")
-		return sb.String()
+		badge := lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("●")
+		line := badge + " " + styleSelected.Background(lipgloss.NoColor{}).Foreground(colorYellow).Render(padRight(name, nameWidth)) + " " + styleDimmed.Render(size)
+		return "  " + line
 	}
 
-	if len(m.cleanupPkgs) == 0 {
-		sb.WriteString("\n  " + lipgloss.NewStyle().Foreground(colorGreen).Render("✓ No orphaned packages found") + "\n")
-		sb.WriteString("  " + styleDimmed.Render("Your system is clean.") + "\n")
-		return sb.String()
-	}
-
-	visible := h - 2
-	for i, p := range m.cleanupPkgs {
-		if i >= visible {
-			break
-		}
-		line := renderCleanupLine(p, w-4, i == m.cleanupCursor)
-		sb.WriteString(line + "\n")
-	}
-
-	return sb.String()
-}
-
-func renderCleanupLine(p pm.Package, width int, selected bool) string {
-	badge := styleOrphan.Render("●")
-	size := fmt.Sprintf("%-10s", p.FormatSize())
-	nameWidth := width - len("●") - len(size) - 4
-	name := truncate(p.Name, nameWidth)
-
+	badge := styleExplicit.Render("●")
 	line := badge + " " + padRight(name, nameWidth) + " " + styleDimmed.Render(size)
-
-	if selected {
-		return styleSelected.Render(" " + line + " ")
-	}
 	return "  " + line
-}
-
-func (m Model) renderWhitelistList(w, h int) string {
-	var sb strings.Builder
-	sb.WriteString(styleTitle.Render("Whitelisted Apps") + "  " + styleDimmed.Render("recursively hidden") + "\n")
-	sb.WriteString(styleDivider.Render(strings.Repeat("─", w-2)) + "\n")
-
-	pkgs := m.filteredPkgs
-	if len(pkgs) == 0 {
-		sb.WriteString("\n  " + styleDimmed.Render("No packages whitelisted") + "\n")
-		sb.WriteString("  " + styleDimmed.Render("Press 'w' in Packages view to add.") + "\n")
-		return sb.String()
-	}
-
-	visible := h - 2
-	for i, p := range pkgs {
-		if i >= visible {
-			break
-		}
-		line := renderPkgLine(p, w-4, i == m.listCursor)
-		sb.WriteString(line + "\n")
-	}
-
-	return sb.String()
 }
 
 func (m Model) renderServicesList(w, h int) string {
@@ -368,6 +249,7 @@ func (m Model) renderStatusBar() string {
 		} else if m.focusedPanel == panelDetail {
 			hints = []string{
 				styleKey.Render("a") + " analyze",
+				styleKey.Render("x") + " remove",
 				styleKey.Render("j/k") + " scroll",
 				styleKey.Render("h/Esc") + " back",
 				styleKey.Render("q") + " quit",
@@ -377,32 +259,15 @@ func (m Model) renderStatusBar() string {
 				styleKey.Render("j/k") + " move",
 				styleKey.Render("l/Enter") + " open",
 				styleKey.Render("s") + " sort",
-				styleKey.Render("f") + " filter",
-				styleKey.Render("v") + " toggle sys",
-				styleKey.Render("w") + " whitelist",
 				styleKey.Render("/") + " search",
-				styleKey.Render("1-4") + " views",
+				styleKey.Render("1-2") + " views",
 				styleKey.Render("q") + " quit",
 			}
-		}
-	case viewCleanup:
-		hints = []string{
-			styleKey.Render("j/k") + " move",
-			styleKey.Render("Enter") + " detail",
-			styleKey.Render("1-4") + " views",
-			styleKey.Render("q") + " quit",
 		}
 	case viewServices:
 		hints = []string{
 			styleKey.Render("j/k") + " move",
-			styleKey.Render("1-4") + " views",
-			styleKey.Render("q") + " quit",
-		}
-	case viewWhitelist:
-		hints = []string{
-			styleKey.Render("j/k") + " move",
-			styleKey.Render("w") + " remove",
-			styleKey.Render("1-4") + " views",
+			styleKey.Render("1-2") + " views",
 			styleKey.Render("q") + " quit",
 		}
 	}
