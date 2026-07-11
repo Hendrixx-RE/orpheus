@@ -8,20 +8,12 @@ import (
 	"orpheus/internal/ai"
 	"orpheus/internal/cache"
 	"orpheus/internal/pm"
-	"orpheus/internal/svc"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-)
-
-type viewID int
-
-const (
-	viewPackages viewID = iota
-	viewServices
 )
 
 type panelID int
@@ -45,7 +37,6 @@ type Model struct {
 	height int
 	ready  bool
 
-	activeView   viewID
 	focusedPanel panelID
 
 	// packages
@@ -73,19 +64,19 @@ type Model struct {
 	removeErr       string
 	passwordInput   textinput.Model
 
-	// services
-	services  []svc.Service
-	svcCursor int
-	svcLoaded bool
-
 	spinner spinner.Model
 	lastKey string
 
 	err error
 
-	mgr   pm.Manager
-	aiSvc *ai.Analyzer
-	cache *cache.Cache
+	selectedPkgs map[string]bool
+	visualMode   bool
+	visualStart  int
+
+	managers  []pm.Manager
+	activeMgr int
+	aiSvc     *ai.Analyzer
+	cache     *cache.Cache
 }
 
 func New() Model {
@@ -113,16 +104,18 @@ func New() Model {
 		passwordInput: pi,
 		detailVP:      vp,
 		loading:       true,
-		mgr:         pm.NewPacman(),
-		aiSvc:       ai.New(),
-		cache:       c,
+		selectedPkgs:  make(map[string]bool),
+		managers:      []pm.Manager{pm.NewPacman(), pm.NewNpm()},
+		activeMgr:     0,
+		aiSvc:         ai.New(),
+		cache:         c,
 	}
 }
 
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
-		loadPackages(m.mgr),
+		loadPackages(m.managers[m.activeMgr]),
 	)
 }
 
@@ -154,16 +147,6 @@ func analyzePackage(a *ai.Analyzer, c *cache.Cache, pkg *pm.Package, explicitNam
 		}
 		c.Set(key, text)
 		return aiAnalysisMsg{text: text}
-	}
-}
-
-func loadServices() tea.Cmd {
-	return func() tea.Msg {
-		svcs, err := svc.ListServices()
-		if err != nil {
-			return svcsLoadedMsg{err: err}
-		}
-		return svcsLoadedMsg{svcs: svcs}
 	}
 }
 
@@ -205,6 +188,50 @@ func (m *Model) applyFilter() {
 
 func (m *Model) currentList() []pm.Package {
 	return m.filteredPkgs
+}
+
+func (m *Model) isPkgSelected(i int) bool {
+	if i < 0 || i >= len(m.filteredPkgs) {
+		return false
+	}
+	name := m.filteredPkgs[i].Name
+	if m.selectedPkgs[name] {
+		return true
+	}
+	if m.visualMode {
+		minIdx := minI(m.visualStart, m.listCursor)
+		maxIdx := maxI(m.visualStart, m.listCursor)
+		if i >= minIdx && i <= maxIdx {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) commitVisualSelection() {
+	if !m.visualMode {
+		return
+	}
+	minIdx := minI(m.visualStart, m.listCursor)
+	maxIdx := maxI(m.visualStart, m.listCursor)
+	for i := minIdx; i <= maxIdx; i++ {
+		m.selectedPkgs[m.filteredPkgs[i].Name] = true
+	}
+	m.visualMode = false
+}
+
+func (m *Model) getSelectedNames() []string {
+	var names []string
+	if len(m.selectedPkgs) > 0 {
+		for k, v := range m.selectedPkgs {
+			if v {
+				names = append(names, k)
+			}
+		}
+	} else if len(m.filteredPkgs) > 0 {
+		names = append(names, m.filteredPkgs[m.listCursor].Name)
+	}
+	return names
 }
 
 func (m *Model) currentCursor() int {

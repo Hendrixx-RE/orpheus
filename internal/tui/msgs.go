@@ -2,7 +2,6 @@ package tui
 
 import (
 	"orpheus/internal/pm"
-	"orpheus/internal/svc"
 )
 
 type pkgsLoadedMsg struct {
@@ -17,11 +16,6 @@ type pkgDetailMsg struct {
 
 type aiAnalysisMsg struct {
 	text string
-	err  error
-}
-
-type svcsLoadedMsg struct {
-	svcs []svc.Service
 	err  error
 }
 

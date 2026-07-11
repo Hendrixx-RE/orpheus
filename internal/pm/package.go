@@ -28,6 +28,7 @@ type Manager interface {
 	Name() string
 	ListAll() ([]Package, error)
 	GetPackage(name string) (*Package, error)
+	UninstallCmd(names []string) []string
 }
 
 func (p *Package) SizeMB() float64 {

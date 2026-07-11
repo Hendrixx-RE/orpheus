@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"orpheus/internal/pm"
-	"orpheus/internal/svc"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -31,22 +30,19 @@ func (m Model) renderSidebar() string {
 
 	var sb strings.Builder
 	sb.WriteString(styleTitle.Render("  Orpheus") + "\n\n")
+	sb.WriteString(styleTitle.Render("  Packages") + "\n")
 
-	views := []struct {
-		id    viewID
-		icon  string
-		label string
-	}{
-		{viewPackages, "  ", "Packages"},
-		{viewServices, "  ", "Services"},
-	}
-
-	for _, v := range views {
+	for i, mgr := range m.managers {
 		var line string
-		if m.activeView == v.id {
-			line = styleSidebarActive.Render("> " + v.icon + v.label)
+		label := mgr.Name()
+		if len(label) > 0 {
+			label = strings.ToUpper(label[:1]) + label[1:]
+		}
+		
+		if m.activeMgr == i {
+			line = styleSidebarActive.Render(">   " + label)
 		} else {
-			line = styleDimmed.Render("  " + v.icon + v.label)
+			line = styleDimmed.Render("    " + label)
 		}
 		sb.WriteString(line + "\n")
 	}
@@ -71,13 +67,7 @@ func (m Model) renderListPanel() string {
 	inner := h - 2 // minus borders
 
 	var sb strings.Builder
-
-	switch m.activeView {
-	case viewPackages:
-		sb.WriteString(m.renderPackageList(w, inner))
-	case viewServices:
-		sb.WriteString(m.renderServicesList(w, inner))
-	}
+	sb.WriteString(m.renderPackageList(w, inner))
 
 	st := stylePanel
 	if m.focusedPanel == panelList {
@@ -127,7 +117,9 @@ func (m Model) renderPackageList(w, h int) string {
 
 	for i := start; i < end; i++ {
 		p := pkgs[i]
-		line := renderPkgLine(p, w-4, i == m.listCursor)
+		checked := m.isPkgSelected(i)
+		hovered := i == m.listCursor
+		line := renderPkgLine(p, w-4, checked, hovered)
 		sb.WriteString(line + "\n")
 	}
 
@@ -140,84 +132,42 @@ func (m Model) renderPackageList(w, h int) string {
 	return sb.String()
 }
 
-func renderPkgLine(p pm.Package, width int, selected bool) string {
+func renderPkgLine(p pm.Package, width int, checked bool, hovered bool) string {
 	size := fmt.Sprintf("%-10s", p.FormatSize())
 	nameWidth := width - 16
 	name := truncate(p.Name, nameWidth)
 
-	if selected {
-		badge := lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("●")
-		line := badge + " " + styleSelected.Background(lipgloss.NoColor{}).Foreground(colorYellow).Render(padRight(name, nameWidth)) + " " + styleDimmed.Render(size)
-		return "  " + line
-	}
-
-	badge := styleExplicit.Render("●")
-	line := badge + " " + padRight(name, nameWidth) + " " + styleDimmed.Render(size)
-	return "  " + line
-}
-
-func (m Model) renderServicesList(w, h int) string {
-	var sb strings.Builder
-	sb.WriteString(styleTitle.Render("Services") + "  " + styleDimmed.Render("systemd units") + "\n")
-	sb.WriteString(styleDivider.Render(strings.Repeat("─", w-2)) + "\n")
-
-	if !m.svcLoaded {
-		sb.WriteString("\n  " + m.spinner.View() + " Loading services...\n")
-		return sb.String()
-	}
-
-	if len(m.services) == 0 {
-		sb.WriteString("\n  " + styleDimmed.Render("No services found") + "\n")
-		return sb.String()
-	}
-
-	visible := h - 2
-	for i, s := range m.services {
-		if i >= visible {
-			break
-		}
-		line := renderServiceLine(s, w-4, i == m.svcCursor)
-		sb.WriteString(line + "\n")
-	}
-
-	return sb.String()
-}
-
-func renderServiceLine(s svc.Service, width int, selected bool) string {
-	badge := s.StatusBadge()
-	var badgeStyled string
-	switch {
-	case s.IsActive():
-		badgeStyled = lipgloss.NewStyle().Foreground(colorGreen).Render(badge)
-	case s.IsFailed():
-		badgeStyled = lipgloss.NewStyle().Foreground(colorRed).Render(badge)
-	default:
-		badgeStyled = styleDimmed.Render(badge)
-	}
-
-	nameWidth := width - 14
-	name := truncate(strings.TrimSuffix(s.Unit, ".service"), nameWidth)
-	owner := ""
-	if s.OwnerPkg != "" {
-		owner = styleDimmed.Render(truncate(s.OwnerPkg, 12))
+	var badge string
+	if checked {
+		badge = lipgloss.NewStyle().Foreground(colorPurple).Bold(true).Render("✓")
 	} else {
-		owner = styleDimmed.Render("unknown     ")
+		badge = styleExplicit.Render("●")
 	}
 
-	line := badgeStyled + " " + padRight(name, nameWidth) + " " + owner
+	line := badge + " " + padRight(name, nameWidth) + " " + styleDimmed.Render(size)
 
-	if selected {
-		return styleSelected.Render(" " + line + " ")
+	if hovered {
+		hoverBadge := lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("●")
+		if checked {
+			hoverBadge = lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("✓")
+		}
+		row := hoverBadge + " " + styleSelected.Background(lipgloss.NoColor{}).Foreground(colorYellow).Render(padRight(name, nameWidth)) + " " + styleDimmed.Render(size)
+		return "  " + row
 	}
+
 	return "  " + line
 }
+
+
 
 func (m Model) renderDetailPanel() string {
 	w := m.detailWidth()
 	h := m.height - 3
 
 	var content string
-	if m.selectedPkg == nil || m.focusedPanel != panelDetail {
+	if m.focusedPanel != panelDetail {
+		content = m.renderDetailEmpty()
+	} else if m.selectedPkg == nil && len(m.selectedPkgs) <= 1 {
 		content = m.renderDetailEmpty()
 	} else {
 		content = m.detailVP.View()
@@ -239,35 +189,26 @@ func (m Model) renderDetailEmpty() string {
 
 func (m Model) renderStatusBar() string {
 	var hints []string
-	switch m.activeView {
-	case viewPackages:
-		if m.searching {
-			hints = []string{
-				styleKey.Render("Enter") + " confirm",
-				styleKey.Render("Esc") + " cancel",
-			}
-		} else if m.focusedPanel == panelDetail {
-			hints = []string{
-				styleKey.Render("a") + " analyze",
-				styleKey.Render("x") + " remove",
-				styleKey.Render("j/k") + " scroll",
-				styleKey.Render("h/Esc") + " back",
-				styleKey.Render("q") + " quit",
-			}
-		} else {
-			hints = []string{
-				styleKey.Render("j/k") + " move",
-				styleKey.Render("l/Enter") + " open",
-				styleKey.Render("s") + " sort",
-				styleKey.Render("/") + " search",
-				styleKey.Render("1-2") + " views",
-				styleKey.Render("q") + " quit",
-			}
-		}
-	case viewServices:
+	if m.searching {
 		hints = []string{
+			styleKey.Render("Enter") + " confirm",
+			styleKey.Render("Esc") + " cancel",
+		}
+	} else if m.focusedPanel == panelDetail {
+		hints = []string{
+			styleKey.Render("a") + " analyze",
+			styleKey.Render("x") + " remove",
+			styleKey.Render("j/k") + " scroll",
+			styleKey.Render("h/Esc") + " back",
+			styleKey.Render("q") + " quit",
+		}
+	} else {
+		hints = []string{
+			styleKey.Render("v/Spc") + " select",
 			styleKey.Render("j/k") + " move",
-			styleKey.Render("1-2") + " views",
+			styleKey.Render("l/Enter") + " open",
+			styleKey.Render("s") + " sort",
+			styleKey.Render("/") + " search",
 			styleKey.Render("q") + " quit",
 		}
 	}

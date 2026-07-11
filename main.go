@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// entry point and app loop
 func main() {
 	loadEnv()
 	m := tui.New()
@@ -23,8 +24,7 @@ func main() {
 	}
 }
 
-// loadEnv reads KEY=VALUE pairs from .env in the same directory as the binary.
-// Existing environment variables are not overwritten.
+// Env loading code
 func loadEnv() {
 	exe, err := os.Executable()
 	if err != nil {

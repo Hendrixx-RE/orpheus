@@ -15,6 +15,11 @@ func NewPacman() *Pacman { return &Pacman{} }
 
 func (p *Pacman) Name() string { return "pacman" }
 
+func (p *Pacman) UninstallCmd(names []string) []string {
+	args := []string{"pacman", "-Rns", "--noconfirm"}
+	return append(args, names...)
+}
+
 func (p *Pacman) ListAll() ([]Package, error) {
 	allOut, err := runCmd("pacman", "-Qi")
 	if err != nil {
