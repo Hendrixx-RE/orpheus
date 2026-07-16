@@ -105,7 +105,7 @@ func New() Model {
 		detailVP:      vp,
 		loading:       true,
 		selectedPkgs:  make(map[string]bool),
-		managers:      []pm.Manager{pm.NewPacman(), pm.NewNpm()},
+		managers:      []pm.Manager{pm.NewPacman(), pm.NewFlatpak(), pm.NewNpm()},
 		activeMgr:     0,
 		aiSvc:         ai.New(),
 		cache:         c,

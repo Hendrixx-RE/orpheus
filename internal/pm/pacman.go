@@ -65,14 +65,6 @@ func (p *Pacman) GetPackage(name string) (*Package, error) {
 	return &pkgs[0], nil
 }
 
-func GetOrphansDetailed() ([]Package, error) {
-	out, _ := runCmdAllowExit1("pacman", "-Qdti")
-	if len(out) == 0 {
-		return nil, nil
-	}
-	return parsePacmanQi(out)
-}
-
 func parsePacmanQi(data []byte) ([]Package, error) {
 	var pkgs []Package
 	var cur *Package
