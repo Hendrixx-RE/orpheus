@@ -58,7 +58,7 @@ func (c *Cache) load() {
 
 func (c *Cache) save() {
 	c.mu.RLock()
-	data, err := json.Marshal(c.data)
+	data, err := json.MarshalIndent(c.data, "", "  ")
 	c.mu.RUnlock()
 	if err != nil {
 		return

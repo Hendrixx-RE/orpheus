@@ -155,6 +155,7 @@ func buildPrompt(pkg *pm.Package, explicitNames []string) string {
 1. Its purpose on this system
 2. Why the user might have installed this specific package, given the other explicit packages on their system
 3. What would happen if the user removed this package
+4. The exact terminal command to launch this package. End your response with a new line containing exactly: (Command: <command>)
 Package: %s %s
 Description: %s
 Install reason: %s

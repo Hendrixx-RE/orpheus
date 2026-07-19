@@ -461,10 +461,13 @@ func (m Model) buildDetailContent() string {
 	case m.aiErr != "":
 		sb.WriteString(styleOrphan.Render(m.aiErr) + "\n")
 	case m.aiText != "":
-		body, verdict := splitVerdict(m.aiText)
-		sb.WriteString(styleVal.Render(wrapText(body, m.detailWidth()-8)) + "\n\n")
+		body, verdict, command := splitVerdict(m.aiText)
+		sb.WriteString(styleVal.Render(wrapText(strings.TrimSpace(body), m.detailWidth()-8)) + "\n\n")
 		if verdict != "" {
 			sb.WriteString(styleVerdict.Render(verdict) + "\n")
+		}
+		if command != "" {
+			sb.WriteString(styleAILabel.Render(command) + "\n")
 		}
 	default:
 		sb.WriteString(styleDimmed.Render("Press a to analyze, x to remove") + "\n")
@@ -513,14 +516,23 @@ func (m Model) buildBatchDetailContent() string {
 	return sb.String()
 }
 
-func splitVerdict(text string) (string, string) {
+func splitVerdict(text string) (string, string, string) {
 	lines := strings.Split(text, "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		if strings.HasPrefix(strings.TrimSpace(lines[i]), "Verdict:") {
-			return strings.Join(lines[:i], "\n"), strings.TrimSpace(lines[i])
+	var bodyLines []string
+	verdict := ""
+	command := ""
+
+	for _, rawLine := range lines {
+		line := strings.TrimSpace(rawLine)
+		if strings.HasPrefix(line, "Verdict:") {
+			verdict = line
+		} else if strings.HasPrefix(line, "(Command:") {
+			command = line
+		} else {
+			bodyLines = append(bodyLines, rawLine)
 		}
 	}
-	return text, ""
+	return strings.Join(bodyLines, "\n"), verdict, command
 }
 
 func wrapText(s string, width int) string {
