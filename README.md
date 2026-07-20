@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎵 Orpheus
+# Orpheus
 
 **A terminal-based package management dashboard for Arch Linux**
 
@@ -44,7 +44,6 @@ Press `a` on any package and Orpheus calls **Llama 3.3 70B** (via Groq) with ful
 - **Why** you probably installed it (based on your other packages)
 - **What happens** if you remove it
 - **How to launch** it (provides the terminal command)
-- **Verdict**: `[SAFE]` · `[CAUTION]` · `[KEEP]`
 
 > The AI sees your entire list of explicit packages, so it can reason about relationships — e.g., knowing you have `neovim` helps it understand why `lua51` exists.
 
