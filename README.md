@@ -6,40 +6,40 @@
 
 *Browse, inspect, AI-analyze, and batch-uninstall packages across multiple package managers — all from one beautiful TUI.*
 
-![Orpheus Dashboard](assets/hero.jpg)
+![Orpheus Dashboard](https://github.com/user-attachments/assets/03d0c46a-2120-4d3a-a6d2-01f45591aeb1)
 
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
-[![Arch Linux](https://img.shields.io/badge/Arch_Linux-1793D1?style=flat-square&logo=archlinux&logoColor=white)](https://archlinux.org)
 [![Bubble Tea](https://img.shields.io/badge/Bubble_Tea-TUI-FF75B5?style=flat-square)](https://github.com/charmbracelet/bubbletea)
-[![AI Powered](https://img.shields.io/badge/AI-Llama_3.3_70B-8B5CF6?style=flat-square)](https://groq.com)
 [![License](https://img.shields.io/badge/License-MIT-fabd2f?style=flat-square)](#license)
 
 </div>
 
 ---
 
-## ✨ Why Orpheus?
+##  Why Orpheus?
 
-Your Arch system accumulates packages over time. Some you installed months ago and forgot about. Some are 500 MB behemoths you used once. Some you're not even sure what they do anymore.
+Your system accumulates packages over time. Some you installed months ago and forgot about. Some are 500 MB behemoths you used once. Some you're not even sure what they do anymore.
 
 **Orpheus gives you clarity.** It pulls every explicitly installed package from Pacman, Flatpak, and npm into a single dashboard — then lets an AI tell you what's safe to remove.
 
 ---
 
-## 🔥 Features
+##  Features
 
-### 🖥️ Three-Panel Dashboard
+###  Three-Panel Dashboard
 A clean, vim-navigable interface with a **sidebar** for switching managers, a **package list** with virtual scrolling, and a **detail panel** with full package info and AI analysis.
 
-### 📦 Multi-Manager Support
+###  Multi-Manager Support
 | Manager | What It Lists | Uninstall Strategy |
 |---------|--------------|-------------------|
 | **Pacman** | All explicitly installed packages (`pacman -Qi`) | `pacman -Rns --noconfirm` (recursive, removes configs) |
 | **Flatpak** | All installed Flatpak applications | Removes app data + cleans unused runtimes |
 | **npm** | Global npm packages with real disk sizes | `npm uninstall -g` |
 
-### 🤖 AI-Powered Package Analysis
-Press `a` on any package and Orpheus calls **Llama 3.3 70B** (via Groq) with full context about your system:
+and many more to come!
+
+###  AI-Powered Package Analysis
+Press `a` on any package and Orpheus tells the full context about your system:
 - **What** the package does on *your* machine
 - **Why** you probably installed it (based on your other packages)
 - **What happens** if you remove it
@@ -47,25 +47,24 @@ Press `a` on any package and Orpheus calls **Llama 3.3 70B** (via Groq) with ful
 
 > The AI sees your entire list of explicit packages, so it can reason about relationships — e.g., knowing you have `neovim` helps it understand why `lua51` exists.
 
-### ⚡ Yazi-Style Multi-Selection
+###  Yazi-Style Multi-Selection
 - `Space` to toggle individual packages
 - `v` to enter **visual mode** — select ranges by moving the cursor
 - Batch-remove everything in one `sudo` call
 
-### 🔍 Live Search & Sort
+###  Live Search & Sort
 - `/` to fuzzy-search by name or description
 - `s` to cycle sort: **Name → Size → Date**
 - Scroll indicator shows your position in the list
 
-### 💾 Persistent Cache
+###  Persistent Cache
 AI analysis results are cached to `~/.cache/orpheus/analysis.json` (formatted with `MarshalIndent` for easy `ripgrep` searching). Analyze once, read forever.
 
-### 🎨 Gruvbox Dark Theme
-Carefully crafted with the Gruvbox Dark palette — rounded borders, gold focus indicators, colored badges, and a context-sensitive status bar.
+### Orpheus is prepackaged with Gruvbox dark so if you want more themes feel free to put an issue or a PR
 
 ---
 
-## 📸 Layout
+##  Layout
 
 ```
 ╭──────────╮╭─────────────────────────╮╭──────────────────────╮
@@ -88,7 +87,7 @@ Carefully crafted with the Gruvbox Dark palette — rounded borders, gold focus 
 
 ---
 
-## ⌨️ Keybindings
+##  Keybindings
 
 Orpheus uses **vim-style navigation** throughout. The status bar always shows available keys for the current context.
 
@@ -121,15 +120,11 @@ Orpheus uses **vim-style navigation** throughout. The status bar always shows av
 
 ---
 
-## 🚀 Installation
+##  Installation
 
 ### Prerequisites
 
-- **Arch Linux** (or Arch-based distro)
 - **Go 1.26+**
-- **pacman** (comes with Arch)
-- **node + npm** (optional, for npm package listing)
-- **flatpak** (optional, for Flatpak support)
 
 ### Build from Source
 
@@ -160,7 +155,7 @@ echo "GROQ_API_KEY=your_key_here" > .env
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 orpheus/
@@ -197,24 +192,7 @@ orpheus/
 
 ---
 
-## 🎨 Theme
-
-Orpheus uses the **Gruvbox Dark** color palette:
-
-| Color | Hex | Usage |
-|-------|-----|-------|
-| ![#282828](https://placehold.co/12x12/282828/282828.png) Base | `#282828` | Background |
-| ![#d79921](https://placehold.co/12x12/d79921/d79921.png) Gold | `#d79921` | Focused borders |
-| ![#fabd2f](https://placehold.co/12x12/fabd2f/fabd2f.png) Yellow | `#fabd2f` | Titles, keybinds, cursor |
-| ![#8ec07c](https://placehold.co/12x12/8ec07c/8ec07c.png) Cyan | `#8ec07c` | Package badges, AI labels |
-| ![#d3869b](https://placehold.co/12x12/d3869b/d3869b.png) Purple | `#d3869b` | Selected checkmarks, spinner |
-| ![#b8bb26](https://placehold.co/12x12/b8bb26/b8bb26.png) Green | `#b8bb26` | Safe verdict |
-| ![#fb4934](https://placehold.co/12x12/fb4934/fb4934.png) Red | `#fb4934` | Errors, warnings |
-| ![#ebdbb2](https://placehold.co/12x12/ebdbb2/ebdbb2.png) Light | `#ebdbb2` | Primary text |
-
----
-
-## 🗺️ Roadmap
+## Roadmap
 
 - [x] Pacman provider
 - [x] npm provider
@@ -224,15 +202,12 @@ Orpheus uses the **Gruvbox Dark** color palette:
 - [x] Ripgrep-ready cache formatting
 - [ ] 🔨 Ripgrep AI cache search (`?` keybind)
 - [ ] Search & install via `yay` (background package cacher + instant search)
-- [ ] Rust (`cargo`), Go, and pipx providers
 - [ ] Global cross-manager search
 - [ ] Package update commands
-- [ ] Leftover config finder (`~/.config` orphan detection)
-- [ ] "Who owns this file?" reverse lookup
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! The codebase is intentionally modular — adding a new package manager is as simple as implementing the `Manager` interface:
 
@@ -247,7 +222,7 @@ type Manager interface {
 
 ---
 
-## 📄 License
+## License
 
 MIT — do whatever you want with it.
 
@@ -257,6 +232,6 @@ MIT — do whatever you want with it.
 
 **Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) 🧋 and [Lip Gloss](https://github.com/charmbracelet/lipgloss) 💄**
 
-*Orpheus — because your package list shouldn't be a mystery.*
+*Orpheus — I should not be trusted with packages.*
 
 </div>
