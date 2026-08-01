@@ -39,6 +39,10 @@ func (c *Cache) Get(key string) (string, bool) {
 	return v, ok
 }
 
+func (c *Cache) Path() string {
+	return c.path
+}
+
 func (c *Cache) Set(key, value string) {
 	c.mu.Lock()
 	c.data[key] = value

@@ -9,6 +9,7 @@ import (
 	"orpheus/internal/cache"
 	"orpheus/internal/pm"
 
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -50,6 +51,17 @@ type Model struct {
 	// search
 	searching   bool
 	searchInput textinput.Model
+
+	// ai search
+	aiSearching   bool
+	aiSearchInput textinput.Model
+
+	// batch background sync
+	batchActive  bool
+	batchTotal   int
+	batchCurrent int
+	batchPkg     string
+	progress     progress.Model
 
 	// selected package detail
 	selectedPkg *pm.Package
@@ -94,14 +106,22 @@ func New() Model {
 	pi.EchoCharacter = '•'
 	pi.CharLimit = 64
 
+	aiTi := textinput.New()
+	aiTi.Placeholder = "ripgrep ai cache..."
+	aiTi.CharLimit = 64
+
 	vp := viewport.New(0, 0)
+
+	prg := progress.New(progress.WithDefaultGradient())
 
 	c, _ := cache.New()
 
 	return Model{
 		spinner:       sp,
 		searchInput:   ti,
+		aiSearchInput: aiTi,
 		passwordInput: pi,
+		progress:      prg,
 		detailVP:      vp,
 		loading:       true,
 		selectedPkgs:  make(map[string]bool),

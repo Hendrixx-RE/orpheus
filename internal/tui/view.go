@@ -65,7 +65,6 @@ func (m Model) renderListPanel() string {
 	w := m.listWidth()
 	h := m.height - 3
 	inner := h - 2 // minus borders
-
 	var sb strings.Builder
 	sb.WriteString(m.renderPackageList(w, inner))
 
@@ -95,6 +94,8 @@ func (m Model) renderPackageList(w, h int) string {
 
 	if m.searching || m.searchInput.Value() != "" {
 		title = "Packages  " + styleAILabel.Render("/"+m.searchInput.Value()) + "  " + styleDimmed.Render("by "+sortLabel)
+	} else if m.aiSearching || m.aiSearchInput.Value() != "" {
+		title = "Packages  " + styleAILabel.Render("? "+m.aiSearchInput.Value()) + "  " + styleDimmed.Render("by "+sortLabel)
 	}
 
 	sb.WriteString(styleTitle.Render(title) + "\n")
@@ -192,6 +193,11 @@ func (m Model) renderStatusBar() string {
 	if m.searching {
 		hints = []string{
 			styleKey.Render("Enter") + " confirm",
+			styleKey.Render("Esc") + " cancel",
+		}
+	} else if m.aiSearching {
+		hints = []string{
+			styleKey.Render("Enter") + " search cache",
 			styleKey.Render("Esc") + " cancel",
 		}
 	} else if m.focusedPanel == panelDetail {

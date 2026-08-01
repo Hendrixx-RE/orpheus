@@ -4,16 +4,13 @@
 - [x] Pacman provider
 - [x] npm provider
 - [x] Flatpak provider (with --delete-data + --unused cleanup)
-- [x] AI analysis with Groq/Llama
+- [x] AI analysis with Groq/OpenAI/Anthropic/Gemini
 - [x] AI now returns terminal command to launch packages (Command: ...)
 - [x] Cache formatted with MarshalIndent (ripgrep-ready)
+- [x] Ripgrep AI Cache Search integration (`?` keybind)
+- [x] Background batch analysis on startup
 
 ## 🔨 In Progress
-- [ ] **Ripgrep AI Cache Search** — Press `?` to search AI analysis cache using ripgrep
-  - Cache is already formatted (one package per line)
-  - Need to write the rg executor function
-  - Need to wire up the `?` keybind and filter UI
-  - Lets you search by concept/purpose/verdict (e.g. "audio", "[CAUTION]")
 
 ## 📋 Planned
 

@@ -22,3 +22,23 @@ type aiAnalysisMsg struct {
 type pkgRemovedMsg struct {
 	err error
 }
+
+// BatchProgressMsg is sent by your background goroutine to update the UI
+type BatchProgressMsg struct {
+	Total   int
+	Current int
+	PkgName string
+	Done    bool
+}
+
+type processNextBatchPkgMsg struct {
+	MissingPkgs   []pm.Package
+	CurrentIdx    int
+	ExplicitNames []string
+}
+
+// aiSearchResultMsg is sent when your ripgrep logic finishes
+type aiSearchResultMsg struct {
+	PkgNames []string
+	Err      error
+}

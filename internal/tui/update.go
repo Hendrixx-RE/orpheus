@@ -4,9 +4,13 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"context"
+	"time"
 
 	"orpheus/internal/pm"
+	"orpheus/internal/cache"
 
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -36,6 +40,81 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 
+	case BatchProgressMsg:
+		m.batchActive = !msg.Done
+		m.batchTotal = msg.Total
+		m.batchCurrent = msg.Current
+		m.batchPkg = msg.PkgName
+		var cmd tea.Cmd
+		if m.batchTotal > 0 {
+			percent := float64(m.batchCurrent) / float64(m.batchTotal)
+			cmd = m.progress.SetPercent(percent)
+		}
+		return m, cmd
+
+	case progress.FrameMsg:
+		progressModel, cmd := m.progress.Update(msg)
+		m.progress = progressModel.(progress.Model)
+		return m, cmd
+
+	case processNextBatchPkgMsg:
+		if msg.CurrentIdx >= len(msg.MissingPkgs) {
+			return m, func() tea.Msg { return BatchProgressMsg{Done: true} }
+		}
+
+		pkg := msg.MissingPkgs[msg.CurrentIdx]
+
+		progressCmd := func() tea.Msg {
+			return BatchProgressMsg{
+				Total:   len(msg.MissingPkgs),
+				Current: msg.CurrentIdx,
+				PkgName: pkg.Name,
+			}
+		}
+
+		analyzeCmd := func() tea.Msg {
+			key := pkg.Name + "@" + pkg.Version
+			text, err := m.aiSvc.Analyze(context.Background(), &pkg, msg.ExplicitNames)
+			if err == nil {
+				m.cache.Set(key, text)
+			}
+			
+			time.Sleep(200 * time.Millisecond) // slight delay to avoid hammering API too hard
+
+			return processNextBatchPkgMsg{
+				MissingPkgs:   msg.MissingPkgs,
+				CurrentIdx:    msg.CurrentIdx + 1,
+				ExplicitNames: msg.ExplicitNames,
+			}
+		}
+
+		return m, tea.Sequence(progressCmd, analyzeCmd)
+
+	case aiSearchResultMsg:
+		if msg.Err != nil {
+			// fallback/clear if error
+			m.applyFilter()
+		} else if msg.PkgNames == nil {
+			// clear AI search
+			m.applyFilter()
+		} else {
+			// filter packages by the ones found in cache
+			nameMap := make(map[string]bool)
+			for _, n := range msg.PkgNames {
+				nameMap[n] = true
+			}
+			var out []pm.Package
+			for _, p := range m.allPkgs {
+				if p.InstallReason == "Explicitly installed" && nameMap[p.Name] {
+					out = append(out, p)
+				}
+			}
+			m.filteredPkgs = out
+			m.listCursor = 0
+			m.ensureVisible()
+		}
+		return m, nil
+
 	case pkgsLoadedMsg:
 		m.loading = false
 		if msg.err != nil {
@@ -45,11 +124,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.allPkgs = msg.pkgs
 		m.filteredPkgs = msg.pkgs
 		m.applyFilter()
-		return m, nil
+
+		// Trigger background batch analysis for any un-analyzed explicit packages
+		return m, triggerBatchAnalysis(m.cache, m.allPkgs)
 
 	case pkgDetailMsg:
 		if msg.err == nil && msg.pkg != nil {
 			m.selectedPkg = msg.pkg
+			m.removeErr = "" // clear any previous error
 			m.detailVP.SetContent(m.buildDetailContent())
 			m.detailVP.GotoTop()
 		}
@@ -71,7 +153,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.removingLoading = false
 		if msg.err != nil {
 			m.removeErr = msg.err.Error()
-			if m.selectedPkg != nil {
+			if len(m.selectedPkgs) > 1 {
+				m.detailVP.SetContent(m.buildBatchDetailContent())
+			} else if m.selectedPkg != nil {
 				m.detailVP.SetContent(m.buildDetailContent())
 			}
 			return m, nil
@@ -87,7 +171,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key == "ctrl+c" {
 			return m, tea.Quit
 		}
-		if key == "q" && !m.searching && !m.askingPassword {
+		if key == "q" && !m.searching && !m.aiSearching && !m.askingPassword {
 			return m, tea.Quit
 		}
 
@@ -97,7 +181,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.askingPassword = false
 				m.passwordInput.Blur()
 				m.passwordInput.SetValue("")
-				m.detailVP.SetContent(m.buildDetailContent())
+				if len(m.selectedPkgs) > 1 {
+					m.detailVP.SetContent(m.buildBatchDetailContent())
+				} else {
+					m.detailVP.SetContent(m.buildDetailContent())
+				}
 				return m, nil
 			case "enter":
 				m.askingPassword = false
@@ -148,6 +236,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.listOffset = 0
 				return m, cmd
 			}
+		}
+
+		if m.aiSearching {
+			switch key {
+			case "esc":
+				m.aiSearching = false
+				m.aiSearchInput.Blur()
+				m.aiSearchInput.SetValue("")
+			case "enter":
+				query := m.aiSearchInput.Value()
+				m.aiSearching = false
+				m.aiSearchInput.Blur()
+				return m, runRipgrepCmd(query, m.cache)
+			default:
+				var cmd tea.Cmd
+				m.aiSearchInput, cmd = m.aiSearchInput.Update(msg)
+				return m, cmd
+			}
+			return m, nil
 		}
 
 		nm, cmd := m.handleKey(key)
@@ -213,6 +320,7 @@ func (m Model) handleDetailKey(key string) (Model, tea.Cmd) {
 	case "x":
 		if (m.selectedPkg != nil || len(m.selectedPkgs) > 1) && !m.removingLoading && !m.aiLoading {
 			m.askingPassword = true
+			m.removeErr = ""
 			m.passwordInput.Focus()
 			m.passwordInput.SetValue("")
 			if len(m.selectedPkgs) > 1 {
@@ -321,6 +429,10 @@ func (m Model) handleListKey(key string) (Model, tea.Cmd) {
 		m.searching = true
 		m.searchInput.Focus()
 		m.lastKey = ""
+	case "?":
+		m.aiSearching = true
+		m.aiSearchInput.Focus()
+		m.lastKey = ""
 	case "esc":
 		if m.visualMode {
 			m.visualMode = false
@@ -367,6 +479,7 @@ func (m *Model) triggerSelect() tea.Cmd {
 	targets := m.getSelectedNames()
 	if len(targets) > 1 {
 		m.selectedPkg = nil
+		m.removeErr = ""
 		m.detailVP.SetContent(m.buildBatchDetailContent())
 		m.detailVP.GotoTop()
 		return nil
@@ -456,6 +569,7 @@ func (m Model) buildDetailContent() string {
 		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Removing package...") + "\n")
 	case m.removeErr != "":
 		sb.WriteString(styleOrphan.Render("Removal failed: "+m.removeErr) + "\n")
+		sb.WriteString(styleDimmed.Render("Press x to retry") + "\n")
 	case m.aiLoading:
 		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Analyzing...") + "\n")
 	case m.aiErr != "":
@@ -509,6 +623,7 @@ func (m Model) buildBatchDetailContent() string {
 		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Removing packages...") + "\n")
 	case m.removeErr != "":
 		sb.WriteString(styleOrphan.Render("Removal failed: "+m.removeErr) + "\n")
+		sb.WriteString(styleDimmed.Render("Press x to retry") + "\n")
 	default:
 		sb.WriteString(styleDimmed.Render("Press x to remove all selected packages") + "\n")
 	}
@@ -609,5 +724,67 @@ func removePackageCmdAsync(cmdArgs []string, password string) tea.Cmd {
 			return pkgRemovedMsg{err: fmt.Errorf("%v: %s", err, out)}
 		}
 		return pkgRemovedMsg{err: nil}
+	}
+}
+
+func triggerBatchAnalysis(c *cache.Cache, pkgs []pm.Package) tea.Cmd {
+	return func() tea.Msg {
+		var missing []pm.Package
+		var explicitNames []string
+
+		for _, p := range pkgs {
+			if p.InstallReason == "Explicitly installed" {
+				explicitNames = append(explicitNames, p.Name)
+				key := p.Name + "@" + p.Version
+				if _, ok := c.Get(key); !ok {
+					missing = append(missing, p)
+				}
+			}
+		}
+
+		if len(missing) == 0 {
+			return BatchProgressMsg{Done: true}
+		}
+
+		return processNextBatchPkgMsg{
+			MissingPkgs:   missing,
+			CurrentIdx:    0,
+			ExplicitNames: explicitNames,
+		}
+	}
+}
+
+func runRipgrepCmd(query string, c *cache.Cache) tea.Cmd {
+	return func() tea.Msg {
+		if query == "" {
+			return aiSearchResultMsg{PkgNames: nil} // clears search
+		}
+		
+		cmd := exec.Command("rg", "-i", query, c.Path())
+		out, err := cmd.Output()
+		if err != nil {
+			// rg returns exit status 1 if no matches found
+			return aiSearchResultMsg{PkgNames: []string{}}
+		}
+		
+		var matchingNames []string
+		lines := strings.Split(string(out), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			// line format: "package@version": "analysis...
+			parts := strings.SplitN(line, `"`, 3)
+			if len(parts) >= 2 {
+				key := parts[1]
+				nameVer := strings.SplitN(key, "@", 2)
+				if len(nameVer) > 0 {
+					matchingNames = append(matchingNames, nameVer[0])
+				}
+			}
+		}
+		
+		return aiSearchResultMsg{PkgNames: matchingNames}
 	}
 }

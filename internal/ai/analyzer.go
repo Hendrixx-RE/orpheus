@@ -17,46 +17,109 @@ import (
 )
 
 const (
-	defaultModel = "llama-3.3-70b-versatile"
-	groqEndpoint = "https://api.groq.com/openai/v1/chat/completions"
+	defaultGroqModel      = "llama-3.3-70b-versatile"
+	defaultOpenAIModel    = "gpt-4o-mini"
+	defaultGeminiModel    = "gemini-1.5-flash"
+	defaultAnthropicModel = "claude-3-5-haiku-latest"
+
+	groqEndpoint      = "https://api.groq.com/openai/v1/chat/completions"
+	openAIEndpoint    = "https://api.openai.com/v1/chat/completions"
+	geminiEndpoint    = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+	anthropicEndpoint = "https://api.anthropic.com/v1/messages"
+)
+
+type Provider string
+
+const (
+	Groq      Provider = "groq"
+	OpenAI    Provider = "openai"
+	Gemini    Provider = "gemini"
+	Anthropic Provider = "anthropic"
 )
 
 type Analyzer struct {
-	model  string
-	client *http.Client
+	provider Provider
+	model    string
+	endpoint string
+	apiKey   string
+	client   *http.Client
 }
 
 func New() *Analyzer {
+	providerStr := strings.ToLower(os.Getenv("ORPHEUS_PROVIDER"))
+	if providerStr == "" {
+		providerStr = "groq"
+	}
+
+	a := &Analyzer{
+		provider: Provider(providerStr),
+		client:   &http.Client{Timeout: 30 * time.Second},
+	}
+
 	model := os.Getenv("ORPHEUS_MODEL")
-	if model == "" {
-		model = defaultModel
+	
+	switch a.provider {
+	case OpenAI:
+		a.endpoint = openAIEndpoint
+		a.apiKey = os.Getenv("OPENAI_API_KEY")
+		a.model = model
+		if a.model == "" {
+			a.model = defaultOpenAIModel
+		}
+	case Gemini:
+		a.endpoint = geminiEndpoint
+		a.apiKey = os.Getenv("GEMINI_API_KEY")
+		a.model = model
+		if a.model == "" {
+			a.model = defaultGeminiModel
+		}
+	case Anthropic:
+		a.endpoint = anthropicEndpoint
+		a.apiKey = os.Getenv("ANTHROPIC_API_KEY")
+		a.model = model
+		if a.model == "" {
+			a.model = defaultAnthropicModel
+		}
+	default:
+		a.provider = Groq
+		a.endpoint = groqEndpoint
+		a.apiKey = os.Getenv("GROQ_API_KEY")
+		a.model = model
+		if a.model == "" {
+			a.model = defaultGroqModel
+		}
 	}
-	return &Analyzer{
-		model:  model,
-		client: &http.Client{Timeout: 30 * time.Second},
-	}
+
+	return a
 }
 
 func (a *Analyzer) Analyze(ctx context.Context, pkg *pm.Package, explicitNames []string) (string, error) {
-	apiKey := os.Getenv("GROQ_API_KEY")
-	if apiKey == "" {
-		return "", fmt.Errorf("GROQ_API_KEY not set — get a free key at console.groq.com")
+	if a.apiKey == "" {
+		return "", fmt.Errorf("%s API key not set in .env", strings.ToUpper(string(a.provider)))
 	}
 
-	body, _ := json.Marshal(map[string]any{
-		"model": a.model,
-		"messages": []map[string]string{
-			{
-				"role":    "system",
-				"content": "You are a Linux package analyzer. Give concise, honest analysis. No markdown headers or bullet points. Plain text only.",
+	var body []byte
+	systemPrompt := "You are a Linux package analyzer. Give concise, honest analysis. No markdown headers or bullet points. Plain text only."
+	userPrompt := buildPrompt(pkg, explicitNames)
+
+	if a.provider == Anthropic {
+		body, _ = json.Marshal(map[string]any{
+			"model":      a.model,
+			"system":     systemPrompt,
+			"messages":   []map[string]string{{"role": "user", "content": userPrompt}},
+			"max_tokens": 300,
+		})
+	} else {
+		// OpenAI compatible format (Groq, OpenAI, Gemini)
+		body, _ = json.Marshal(map[string]any{
+			"model": a.model,
+			"messages": []map[string]string{
+				{"role": "system", "content": systemPrompt},
+				{"role": "user", "content": userPrompt},
 			},
-			{
-				"role":    "user",
-				"content": buildPrompt(pkg, explicitNames),
-			},
-		},
-		"max_tokens": 300,
-	})
+			"max_tokens": 300,
+		})
+	}
 
 	backoff := 5 * time.Second
 	for attempt := range 4 {
@@ -69,11 +132,17 @@ func (a *Analyzer) Analyze(ctx context.Context, pkg *pm.Package, explicitNames [
 			backoff *= 2
 		}
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, groqEndpoint, bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.endpoint, bytes.NewReader(body))
 		if err != nil {
 			return "", err
 		}
-		req.Header.Set("Authorization", "Bearer "+apiKey)
+
+		if a.provider == Anthropic {
+			req.Header.Set("x-api-key", a.apiKey)
+			req.Header.Set("anthropic-version", "2023-06-01")
+		} else {
+			req.Header.Set("Authorization", "Bearer "+a.apiKey)
+		}
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := a.client.Do(req)
@@ -93,10 +162,10 @@ func (a *Analyzer) Analyze(ctx context.Context, pkg *pm.Package, explicitNames [
 			continue
 		}
 		if resp.StatusCode != 200 {
-			return "", fmt.Errorf("groq error %d: %s", resp.StatusCode, extractError(data))
+			return "", fmt.Errorf("%s error %d: %s", a.provider, resp.StatusCode, extractError(data, a.provider))
 		}
 
-		text, err := extractContent(data)
+		text, err := extractContent(data, a.provider)
 		if err != nil {
 			return "", err
 		}
@@ -105,7 +174,23 @@ func (a *Analyzer) Analyze(ctx context.Context, pkg *pm.Package, explicitNames [
 	return "", fmt.Errorf("rate limited — try again in a moment")
 }
 
-func extractContent(data []byte) (string, error) {
+func extractContent(data []byte, provider Provider) (string, error) {
+	if provider == Anthropic {
+		var resp struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		}
+		if err := json.Unmarshal(data, &resp); err != nil {
+			return "", err
+		}
+		if len(resp.Content) == 0 {
+			return "", fmt.Errorf("empty response")
+		}
+		return resp.Content[0].Text, nil
+	}
+
+	// OpenAI compatible
 	var resp struct {
 		Choices []struct {
 			Message struct {
@@ -122,7 +207,19 @@ func extractContent(data []byte) (string, error) {
 	return resp.Choices[0].Message.Content, nil
 }
 
-func extractError(data []byte) string {
+func extractError(data []byte, provider Provider) string {
+	if provider == Anthropic {
+		var resp struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(data, &resp); err != nil {
+			return string(data)
+		}
+		return resp.Error.Message
+	}
+
 	var resp struct {
 		Error struct {
 			Message string `json:"message"`
