@@ -190,7 +190,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key == "ctrl+c" {
 			return m, tea.Quit
 		}
-		if key == "q" && !m.searching && !m.aiSearching && !m.askingPassword {
+		if key == "q" && !m.searching && !m.askingPassword {
 			return m, tea.Quit
 		}
 
@@ -291,25 +291,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.listOffset = 0
 				return m, cmd
 			}
-		}
-
-		if m.aiSearching {
-			switch key {
-			case "esc":
-				m.aiSearching = false
-				m.aiSearchInput.Blur()
-				m.aiSearchInput.SetValue("")
-			case "enter":
-				query := m.aiSearchInput.Value()
-				m.aiSearching = false
-				m.aiSearchInput.Blur()
-				return m, runRipgrepCmd(query, m.cache)
-			default:
-				var cmd tea.Cmd
-				m.aiSearchInput, cmd = m.aiSearchInput.Update(msg)
-				return m, cmd
-			}
-			return m, nil
 		}
 
 		nm, cmd := m.handleKey(key)
@@ -484,13 +465,9 @@ func (m Model) handleListKey(key string) (Model, tea.Cmd) {
 			m.lastKey = "g"
 		}
 		return m, nil
-	case "/":
+	case "/", "?":
 		m.searching = true
 		m.searchInput.Focus()
-		m.lastKey = ""
-	case "?":
-		m.aiSearching = true
-		m.aiSearchInput.Focus()
 		m.lastKey = ""
 	case "esc":
 		if m.visualMode {
@@ -836,40 +813,5 @@ func triggerBatchAnalysis(c *cache.Cache, pkgs []pm.Package) tea.Cmd {
 			CurrentIdx:    0,
 			ExplicitNames: explicitNames,
 		}
-	}
-}
-
-func runRipgrepCmd(query string, c *cache.Cache) tea.Cmd {
-	return func() tea.Msg {
-		if query == "" {
-			return aiSearchResultMsg{PkgNames: nil} // clears search
-		}
-		
-		cmd := exec.Command("rg", "-i", query, c.Path())
-		out, err := cmd.Output()
-		if err != nil {
-			// rg returns exit status 1 if no matches found
-			return aiSearchResultMsg{PkgNames: []string{}}
-		}
-		
-		var matchingNames []string
-		lines := strings.Split(string(out), "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			// line format: "package@version": "analysis...
-			parts := strings.SplitN(line, `"`, 3)
-			if len(parts) >= 2 {
-				key := parts[1]
-				nameVer := strings.SplitN(key, "@", 2)
-				if len(nameVer) > 0 {
-					matchingNames = append(matchingNames, nameVer[0])
-				}
-			}
-		}
-		
-		return aiSearchResultMsg{PkgNames: matchingNames}
 	}
 }

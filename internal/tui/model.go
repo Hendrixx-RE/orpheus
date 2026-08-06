@@ -4,6 +4,7 @@ package tui
 import (
 	"context"
 	"sort"
+	"strings"
 
 	"orpheus/internal/ai"
 	"orpheus/internal/cache"
@@ -51,10 +52,6 @@ type Model struct {
 	// search
 	searching   bool
 	searchInput textinput.Model
-
-	// ai search
-	aiSearching   bool
-	aiSearchInput textinput.Model
 
 	// batch background sync
 	batchActive  bool
@@ -109,10 +106,6 @@ func New() Model {
 	pi.EchoCharacter = '•'
 	pi.CharLimit = 64
 
-	aiTi := textinput.New()
-	aiTi.Placeholder = "ripgrep ai cache..."
-	aiTi.CharLimit = 64
-
 	vp := viewport.New(0, 0)
 
 	prg := progress.New(progress.WithDefaultGradient())
@@ -122,7 +115,6 @@ func New() Model {
 	return Model{
 		spinner:       sp,
 		searchInput:   ti,
-		aiSearchInput: aiTi,
 		passwordInput: pi,
 		progress:      prg,
 		detailVP:      vp,
@@ -175,32 +167,91 @@ func analyzePackage(a *ai.Analyzer, c *cache.Cache, pkg *pm.Package, explicitNam
 
 // helpers
 
+type matchedPackage struct {
+	pkg  pm.Package
+	rank int
+}
+
 func (m *Model) applyFilter() {
-	q := m.searchInput.Value()
-	var out []pm.Package
+	q := strings.TrimSpace(m.searchInput.Value())
+	qLower := toLower(q)
+
+	if q == "" {
+		var out []pm.Package
+		for _, p := range m.allPkgs {
+			if p.InstallReason == "Explicitly installed" {
+				out = append(out, p)
+			}
+		}
+		switch m.sortMode {
+		case sortBySize:
+			sort.Slice(out, func(i, j int) bool {
+				return out[i].Size > out[j].Size
+			})
+		case sortByDate:
+			sort.Slice(out, func(i, j int) bool {
+				return out[i].InstallDate.After(out[j].InstallDate)
+			})
+		case sortByName:
+			sort.Slice(out, func(i, j int) bool {
+				return out[i].Name < out[j].Name
+			})
+		}
+		m.filteredPkgs = out
+		if m.listCursor >= len(m.filteredPkgs) {
+			m.listCursor = max(0, len(m.filteredPkgs)-1)
+		}
+		return
+	}
+
+	var matches []matchedPackage
 
 	for _, p := range m.allPkgs {
 		if p.InstallReason != "Explicitly installed" {
 			continue
 		}
-		if q == "" || contains(p.Name, q) || contains(p.Description, q) {
-			out = append(out, p)
+
+		nameLower := toLower(p.Name)
+		descLower := toLower(p.Description)
+		rank := 0
+
+		if nameLower == qLower {
+			rank = 1
+		} else if strings.HasPrefix(nameLower, qLower) {
+			rank = 2
+		} else if strings.Contains(nameLower, qLower) {
+			rank = 3
+		} else if strings.Contains(descLower, qLower) {
+			rank = 4
+		} else {
+			key := p.Name + "@" + p.Version
+			if aiText, ok := m.cache.Get(key); ok && contains(aiText, q) {
+				rank = 5
+			}
+		}
+
+		if rank > 0 {
+			matches = append(matches, matchedPackage{pkg: p, rank: rank})
 		}
 	}
 
-	switch m.sortMode {
-	case sortBySize:
-		sort.Slice(out, func(i, j int) bool {
-			return out[i].Size > out[j].Size
-		})
-	case sortByDate:
-		sort.Slice(out, func(i, j int) bool {
-			return out[i].InstallDate.After(out[j].InstallDate)
-		})
-	case sortByName:
-		sort.Slice(out, func(i, j int) bool {
-			return out[i].Name < out[j].Name
-		})
+	sort.Slice(matches, func(i, j int) bool {
+		if matches[i].rank != matches[j].rank {
+			return matches[i].rank < matches[j].rank
+		}
+		switch m.sortMode {
+		case sortBySize:
+			return matches[i].pkg.Size > matches[j].pkg.Size
+		case sortByDate:
+			return matches[i].pkg.InstallDate.After(matches[j].pkg.InstallDate)
+		default:
+			return matches[i].pkg.Name < matches[j].pkg.Name
+		}
+	})
+
+	var out []pm.Package
+	for _, item := range matches {
+		out = append(out, item.pkg)
 	}
 
 	m.filteredPkgs = out
