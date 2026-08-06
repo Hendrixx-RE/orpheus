@@ -20,6 +20,27 @@ func (p *Pacman) UninstallCmd(names []string) []string {
 	return append(args, names...)
 }
 
+func (p *Pacman) UninstallOrphansCmd() []string {
+	cmdStr := `orphans=$(pacman -Qtdq); if [ -n "$orphans" ]; then pacman -Rns --noconfirm $orphans; else echo "No orphan packages found."; fi`
+	return []string{"sh", "-c", cmdStr}
+}
+
+func (p *Pacman) GetOrphans() ([]string, error) {
+	out, err := runCmdAllowExit1("pacman", "-Qtdq")
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(string(out), "\n")
+	var orphans []string
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if l != "" {
+			orphans = append(orphans, l)
+		}
+	}
+	return orphans, nil
+}
+
 func (p *Pacman) ListAll() ([]Package, error) {
 	allOut, err := runCmd("pacman", "-Qi")
 	if err != nil {

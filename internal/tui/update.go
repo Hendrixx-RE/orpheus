@@ -153,17 +153,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.removingLoading = false
 		if msg.err != nil {
 			m.removeErr = msg.err.Error()
-			if len(m.selectedPkgs) > 1 {
-				m.detailVP.SetContent(m.buildBatchDetailContent())
-			} else if m.selectedPkg != nil {
-				m.detailVP.SetContent(m.buildDetailContent())
+			if !m.removingOrphans {
+				if len(m.selectedPkgs) > 1 {
+					m.detailVP.SetContent(m.buildBatchDetailContent())
+				} else if m.selectedPkg != nil {
+					m.detailVP.SetContent(m.buildDetailContent())
+				}
 			}
 			return m, nil
 		}
+		m.removingOrphans = false
+		m.checkingOrphans = false
+		m.orphanList = nil
 		m.loading = true
 		m.selectedPkg = nil
 		m.focusedPanel = panelList
 		return m, loadPackages(m.managers[m.activeMgr])
+
+	case orphansCheckedMsg:
+		m.checkingOrphans = false
+		if msg.err != nil {
+			m.removeErr = msg.err.Error()
+			return m, nil
+		}
+		m.orphanList = msg.orphans
+		if len(msg.orphans) > 0 {
+			m.askingPassword = true
+			m.passwordInput.Focus()
+			m.passwordInput.SetValue("")
+		}
+		return m, nil
 
 	case tea.KeyMsg:
 		key := msg.String()
@@ -179,12 +198,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch key {
 			case "esc":
 				m.askingPassword = false
+				m.removingOrphans = false
 				m.passwordInput.Blur()
 				m.passwordInput.SetValue("")
 				if len(m.selectedPkgs) > 1 {
 					m.detailVP.SetContent(m.buildBatchDetailContent())
-				} else {
+				} else if m.selectedPkg != nil {
 					m.detailVP.SetContent(m.buildDetailContent())
+				} else {
+					m.detailVP.SetContent(m.renderDetailEmpty())
 				}
 				return m, nil
 			case "enter":
@@ -195,25 +217,58 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.passwordInput.Blur()
 				m.passwordInput.SetValue("")
 
-				targets := m.getSelectedNames()
-				if len(targets) > 1 {
-					m.detailVP.SetContent(m.buildBatchDetailContent())
+				var cmdArgs []string
+				if m.removingOrphans {
+					cmdArgs = m.managers[m.activeMgr].UninstallOrphansCmd()
 				} else {
-					m.detailVP.SetContent(m.buildDetailContent())
+					targets := m.getSelectedNames()
+					if len(targets) > 1 {
+						m.detailVP.SetContent(m.buildBatchDetailContent())
+					} else {
+						m.detailVP.SetContent(m.buildDetailContent())
+					}
+					cmdArgs = m.managers[m.activeMgr].UninstallCmd(targets)
 				}
 
-				cmdArgs := m.managers[m.activeMgr].UninstallCmd(targets)
 				return m, removePackageCmdAsync(cmdArgs, pw)
 			default:
 				var cmd tea.Cmd
 				m.passwordInput, cmd = m.passwordInput.Update(msg)
-				if len(m.selectedPkgs) > 1 {
-					m.detailVP.SetContent(m.buildBatchDetailContent())
-				} else {
-					m.detailVP.SetContent(m.buildDetailContent())
+				if !m.removingOrphans {
+					if len(m.selectedPkgs) > 1 {
+						m.detailVP.SetContent(m.buildBatchDetailContent())
+					} else {
+						m.detailVP.SetContent(m.buildDetailContent())
+					}
 				}
 				return m, cmd
 			}
+		}
+
+		if m.removingOrphans {
+			switch key {
+			case "esc":
+				m.removingOrphans = false
+				m.checkingOrphans = false
+				m.askingPassword = false
+				m.removingLoading = false
+				m.orphanList = nil
+				m.removeErr = ""
+				m.passwordInput.Blur()
+				m.passwordInput.SetValue("")
+				return m, nil
+			case "o":
+				if !m.removingLoading && !m.checkingOrphans {
+					if len(m.orphanList) > 0 {
+						m.askingPassword = true
+						m.removeErr = ""
+						m.passwordInput.Focus()
+						m.passwordInput.SetValue("")
+						return m, nil
+					}
+				}
+			}
+			return m, nil
 		}
 
 		if m.searching {
@@ -350,6 +405,8 @@ func (m Model) handleDetailKey(key string) (Model, tea.Cmd) {
 			m.lastKey = "g"
 		}
 		return m, nil
+	case "o":
+		return m, m.startOrphanRemoval()
 	case "esc", "h":
 		m.focusedPanel = panelList
 	}
@@ -374,6 +431,8 @@ func (m Model) handleSidebarKey(key string) (Model, tea.Cmd) {
 		m.selectedPkgs = make(map[string]bool)
 		m.visualMode = false
 		return m, loadPackages(m.managers[m.activeMgr])
+	case "o":
+		return m, m.startOrphanRemoval()
 	case "l", "right", "enter":
 		m.focusedPanel = panelList
 	}
@@ -462,6 +521,8 @@ func (m Model) handleListKey(key string) (Model, tea.Cmd) {
 		m.loading = true
 		m.lastKey = ""
 		return m, loadPackages(m.managers[m.activeMgr])
+	case "o":
+		return m, m.startOrphanRemoval()
 	default:
 		m.lastKey = ""
 	}
@@ -469,6 +530,7 @@ func (m Model) handleListKey(key string) (Model, tea.Cmd) {
 }
 
 func (m *Model) triggerSelect() tea.Cmd {
+	m.removingOrphans = false
 	list := m.currentList()
 	cursor := m.currentCursor()
 	if cursor >= len(list) {
@@ -630,6 +692,29 @@ func (m Model) buildBatchDetailContent() string {
 
 	return sb.String()
 }
+
+func checkOrphansCmd(mgr pm.Manager) tea.Cmd {
+	return func() tea.Msg {
+		orphans, err := mgr.GetOrphans()
+		return orphansCheckedMsg{orphans: orphans, err: err}
+	}
+}
+
+func (m *Model) startOrphanRemoval() tea.Cmd {
+	if !m.removingLoading && !m.aiLoading && !m.checkingOrphans {
+		m.removingOrphans = true
+		m.checkingOrphans = true
+		m.askingPassword = false
+		m.orphanList = nil
+		m.removeErr = ""
+		m.passwordInput.Blur()
+		m.passwordInput.SetValue("")
+		m.lastKey = ""
+		return checkOrphansCmd(m.managers[m.activeMgr])
+	}
+	return nil
+}
+
 
 func splitVerdict(text string) (string, string, string) {
 	lines := strings.Split(text, "\n")

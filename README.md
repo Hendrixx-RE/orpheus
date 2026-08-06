@@ -113,7 +113,9 @@ Orpheus uses **vim-style navigation** throughout. The status bar always shows av
 |-----|--------|
 | `a` | AI analyze selected package |
 | `x` | Remove selected package(s) |
+| `o` | Clean orphan packages for active manager |
 | `/` | Search packages |
+| `?` | Search AI cache using ripgrep |
 | `s` | Cycle sort mode |
 | `r` | Reload package list |
 | `q` | Quit |

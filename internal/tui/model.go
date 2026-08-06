@@ -73,6 +73,9 @@ type Model struct {
 	// removal state
 	askingPassword  bool
 	removingLoading bool
+	removingOrphans bool
+	checkingOrphans bool
+	orphanList      []string
 	removeErr       string
 	passwordInput   textinput.Model
 

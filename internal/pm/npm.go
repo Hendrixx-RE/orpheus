@@ -2,6 +2,7 @@ package pm
 
 import (
 	"encoding/json"
+	"strings"
 )
 
 type Npm struct{}
@@ -13,6 +14,30 @@ func (p *Npm) Name() string { return "node" }
 func (p *Npm) UninstallCmd(names []string) []string {
 	args := []string{"npm", "uninstall", "-g"}
 	return append(args, names...)
+}
+
+func (p *Npm) UninstallOrphansCmd() []string {
+	return []string{"npm", "prune", "-g"}
+}
+
+func (p *Npm) GetOrphans() ([]string, error) {
+	out, err := runCmdAllowExit1("npm", "prune", "-g", "--dry-run")
+	if err != nil {
+		return []string{}, nil
+	}
+	str := string(out)
+	if strings.TrimSpace(str) == "" || strings.Contains(str, "up to date") {
+		return []string{}, nil
+	}
+	lines := strings.Split(str, "\n")
+	var orphans []string
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if l != "" && (strings.HasPrefix(l, "removed") || strings.HasPrefix(l, "unneeded")) {
+			orphans = append(orphans, l)
+		}
+	}
+	return orphans, nil
 }
 
 func (p *Npm) ListAll() ([]Package, error) {

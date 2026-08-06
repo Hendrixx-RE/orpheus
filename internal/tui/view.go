@@ -21,7 +21,56 @@ func (m Model) View() string {
 	content := lipgloss.JoinHorizontal(lipgloss.Top, sidebar, list, detail)
 	status := m.renderStatusBar()
 
-	return lipgloss.JoinVertical(lipgloss.Left, content, status)
+	mainView := lipgloss.JoinVertical(lipgloss.Left, content, status)
+
+	if m.removingOrphans {
+		return m.renderOrphanModal()
+	}
+
+	return mainView
+}
+
+func (m Model) renderOrphanModal() string {
+	mgrName := m.managers[m.activeMgr].Name()
+	mgrTitle := strings.ToUpper(mgrName[:1]) + mgrName[1:]
+	var sb strings.Builder
+
+	sb.WriteString(styleTitle.Render("Orphan Cleanup — "+mgrTitle) + "\n")
+	sb.WriteString(styleDivider.Render(strings.Repeat("─", 44)) + "\n\n")
+
+	switch {
+	case m.checkingOrphans:
+		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Checking for orphan packages...") + "\n\n")
+		sb.WriteString(styleDimmed.Render("Please wait..."))
+	case m.askingPassword:
+		count := len(m.orphanList)
+		sb.WriteString(styleVal.Render(fmt.Sprintf("Found %d orphan package(s).", count)) + "\n")
+		sb.WriteString(styleVal.Render("Enter sudo password to remove:") + "\n\n")
+		sb.WriteString(m.passwordInput.View() + "\n\n")
+		sb.WriteString(styleDimmed.Render("(Press Esc to cancel)"))
+	case m.removingLoading:
+		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Removing orphan packages...") + "\n\n")
+		sb.WriteString(styleDimmed.Render("Please wait..."))
+	case m.removeErr != "":
+		sb.WriteString(styleOrphan.Render("Removal failed:") + "\n")
+		sb.WriteString(styleOrphan.Render(truncate(m.removeErr, 44)) + "\n\n")
+		sb.WriteString(styleDimmed.Render("Press o to retry, or Esc to close"))
+	case len(m.orphanList) == 0:
+		sb.WriteString(styleVal.Render("No orphans to clean.") + "\n\n")
+		sb.WriteString(styleDimmed.Render("(Press Esc to close)"))
+	default:
+		sb.WriteString(styleDimmed.Render("Press o to remove orphan packages for "+mgrName) + "\n\n")
+		sb.WriteString(styleDimmed.Render("(Press Esc to close)"))
+	}
+
+	modalBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorBorderFoc).
+		Padding(1, 3).
+		Width(50).
+		Render(sb.String())
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modalBox)
 }
 
 func (m Model) renderSidebar() string {
@@ -204,6 +253,7 @@ func (m Model) renderStatusBar() string {
 		hints = []string{
 			styleKey.Render("a") + " analyze",
 			styleKey.Render("x") + " remove",
+			styleKey.Render("o") + " orphans",
 			styleKey.Render("j/k") + " scroll",
 			styleKey.Render("h/Esc") + " back",
 			styleKey.Render("q") + " quit",
@@ -214,6 +264,7 @@ func (m Model) renderStatusBar() string {
 			styleKey.Render("j/k") + " move",
 			styleKey.Render("l/Enter") + " open",
 			styleKey.Render("s") + " sort",
+			styleKey.Render("o") + " orphans",
 			styleKey.Render("/") + " search",
 			styleKey.Render("q") + " quit",
 		}

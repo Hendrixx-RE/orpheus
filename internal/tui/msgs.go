@@ -42,3 +42,8 @@ type aiSearchResultMsg struct {
 	PkgNames []string
 	Err      error
 }
+
+type orphansCheckedMsg struct {
+	orphans []string
+	err     error
+}

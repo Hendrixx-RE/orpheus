@@ -18,6 +18,31 @@ func (p *Flatpak) UninstallCmd(names []string) []string {
 	return []string{"sh", "-c", cmdStr}
 }
 
+func (p *Flatpak) UninstallOrphansCmd() []string {
+	cmdStr := "dbus-run-session flatpak uninstall -y --unused"
+	return []string{"sh", "-c", cmdStr}
+}
+
+func (p *Flatpak) GetOrphans() ([]string, error) {
+	out, err := runCmdAllowExit1("flatpak", "uninstall", "--unused")
+	if err != nil {
+		return []string{}, nil
+	}
+	str := string(out)
+	if strings.Contains(str, "Nothing unused") || strings.TrimSpace(str) == "" {
+		return []string{}, nil
+	}
+	lines := strings.Split(str, "\n")
+	var orphans []string
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if l != "" && !strings.HasPrefix(l, "Nothing unused") {
+			orphans = append(orphans, l)
+		}
+	}
+	return orphans, nil
+}
+
 func (p *Flatpak) ListAll() ([]Package, error) {
 	// flatpak list outputs tab-separated columns when piped.
 	// Columns: application, name, version, size, description, arch

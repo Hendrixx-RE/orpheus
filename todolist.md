@@ -9,6 +9,7 @@
 - [x] Cache formatted with MarshalIndent (ripgrep-ready)
 - [x] Ripgrep AI Cache Search integration (`?` keybind)
 - [x] Background batch analysis on startup
+- [x] Orphan package cleanup keymap (`o` keybind) per provider
 
 ## 🔨 In Progress
 
