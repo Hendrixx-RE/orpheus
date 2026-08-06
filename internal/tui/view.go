@@ -27,6 +27,10 @@ func (m Model) View() string {
 		return m.renderOrphanModal()
 	}
 
+	if m.installingModal {
+		return m.renderInstallModal()
+	}
+
 	return mainView
 }
 
@@ -66,6 +70,43 @@ func (m Model) renderOrphanModal() string {
 	modalBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorBorderFoc).
+		Padding(1, 3).
+		Width(50).
+		Render(sb.String())
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modalBox)
+}
+
+func (m Model) renderInstallModal() string {
+	mgrName := m.managers[m.activeMgr].Name()
+	mgrTitle := strings.ToUpper(mgrName[:1]) + mgrName[1:]
+	var sb strings.Builder
+
+	sb.WriteString(styleTitle.Render("Install Package — "+mgrTitle) + "\n")
+	sb.WriteString(styleDivider.Render(strings.Repeat("─", 44)) + "\n\n")
+
+	switch {
+	case m.installingLoading:
+		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Installing "+m.installPkgName+"...") + "\n\n")
+		sb.WriteString(styleDimmed.Render("Please wait..."))
+	case m.installErr != "":
+		sb.WriteString(styleOrphan.Render("Install failed:") + "\n")
+		sb.WriteString(styleOrphan.Render(truncate(m.installErr, 44)) + "\n\n")
+		sb.WriteString(styleDimmed.Render("Press Esc to close, i to retry"))
+	case m.installAskPassword:
+		sb.WriteString(styleVal.Render("Installing: "+m.installPkgName) + "\n")
+		sb.WriteString(styleVal.Render("Enter sudo password:") + "\n\n")
+		sb.WriteString(m.installPasswordInput.View() + "\n\n")
+		sb.WriteString(styleDimmed.Render("(Press Enter to confirm, Esc to cancel)"))
+	default:
+		sb.WriteString(styleDimmed.Render("Enter the package name to install:") + "\n\n")
+		sb.WriteString(m.installPkgInput.View() + "\n\n")
+		sb.WriteString(styleDimmed.Render("(Press Enter to confirm, Esc to cancel)"))
+	}
+
+	modalBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorCyan).
 		Padding(1, 3).
 		Width(50).
 		Render(sb.String())
@@ -246,6 +287,7 @@ func (m Model) renderStatusBar() string {
 		hints = []string{
 			styleKey.Render("a") + " analyze",
 			styleKey.Render("x") + " remove",
+			styleKey.Render("i") + " install",
 			styleKey.Render("o") + " orphans",
 			styleKey.Render("j/k") + " scroll",
 			styleKey.Render("h/Esc") + " back",
@@ -257,6 +299,7 @@ func (m Model) renderStatusBar() string {
 			styleKey.Render("j/k") + " move",
 			styleKey.Render("l/Enter") + " open",
 			styleKey.Render("s") + " sort",
+			styleKey.Render("i") + " install",
 			styleKey.Render("o") + " orphans",
 			styleKey.Render("/") + " search",
 			styleKey.Render("q") + " quit",

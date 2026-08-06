@@ -76,6 +76,15 @@ type Model struct {
 	removeErr       string
 	passwordInput   textinput.Model
 
+	// install state
+	installingModal    bool
+	installPkgInput    textinput.Model
+	installAskPassword bool
+	installPasswordInput textinput.Model
+	installingLoading  bool
+	installErr         string
+	installPkgName     string
+
 	spinner spinner.Model
 	lastKey string
 
@@ -106,6 +115,16 @@ func New() Model {
 	pi.EchoCharacter = '•'
 	pi.CharLimit = 64
 
+	ii := textinput.New()
+	ii.Placeholder = "package name..."
+	ii.CharLimit = 128
+
+	ipi := textinput.New()
+	ipi.Placeholder = "sudo password"
+	ipi.EchoMode = textinput.EchoPassword
+	ipi.EchoCharacter = '•'
+	ipi.CharLimit = 64
+
 	vp := viewport.New(0, 0)
 
 	prg := progress.New(progress.WithDefaultGradient())
@@ -113,17 +132,19 @@ func New() Model {
 	c, _ := cache.New()
 
 	return Model{
-		spinner:       sp,
-		searchInput:   ti,
-		passwordInput: pi,
-		progress:      prg,
-		detailVP:      vp,
-		loading:       true,
-		selectedPkgs:  make(map[string]bool),
-		managers:      []pm.Manager{pm.NewPacman(), pm.NewFlatpak(), pm.NewNpm()},
-		activeMgr:     0,
-		aiSvc:         ai.New(),
-		cache:         c,
+		spinner:              sp,
+		searchInput:          ti,
+		passwordInput:        pi,
+		installPkgInput:      ii,
+		installPasswordInput: ipi,
+		progress:             prg,
+		detailVP:             vp,
+		loading:              true,
+		selectedPkgs:         make(map[string]bool),
+		managers:             []pm.Manager{pm.NewPacman(), pm.NewFlatpak(), pm.NewNpm()},
+		activeMgr:            0,
+		aiSvc:                ai.New(),
+		cache:                c,
 	}
 }
 

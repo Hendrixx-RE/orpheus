@@ -23,6 +23,10 @@ type pkgRemovedMsg struct {
 	err error
 }
 
+type pkgInstalledMsg struct {
+	err error
+}
+
 // BatchProgressMsg is sent by your background goroutine to update the UI
 type BatchProgressMsg struct {
 	Total   int

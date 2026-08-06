@@ -74,12 +74,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		analyzeCmd := func() tea.Msg {
 			key := pkg.Name + "@" + pkg.Version
-			text, err := m.aiSvc.Analyze(context.Background(), &pkg, msg.ExplicitNames)
-			if err == nil {
-				m.cache.Set(key, text)
+			// Re-check cache right before making the call — a parallel run may have
+			// already populated this entry between when the batch was built and now.
+			if _, ok := m.cache.Get(key); !ok {
+				text, err := m.aiSvc.Analyze(context.Background(), &pkg, msg.ExplicitNames)
+				if err == nil {
+					m.cache.Set(key, text)
+				}
+				time.Sleep(200 * time.Millisecond) // slight delay to avoid hammering API
 			}
-			
-			time.Sleep(200 * time.Millisecond) // slight delay to avoid hammering API too hard
 
 			return processNextBatchPkgMsg{
 				MissingPkgs:   msg.MissingPkgs,
@@ -125,8 +128,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.filteredPkgs = msg.pkgs
 		m.applyFilter()
 
-		// Trigger background batch analysis for any un-analyzed explicit packages
-		return m, triggerBatchAnalysis(m.cache, m.allPkgs)
+		// Only trigger background batch analysis if one isn't already running.
+		// Without this guard, every reload (manager switch, post-install, post-remove)
+		// would fire a full second batch while the first was still mid-flight,
+		// causing every package to be analyzed multiple times.
+		if !m.batchActive {
+			return m, triggerBatchAnalysis(m.cache, m.allPkgs)
+		}
+		return m, nil
 
 	case pkgDetailMsg:
 		if msg.err == nil && msg.pkg != nil {
@@ -170,6 +179,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focusedPanel = panelList
 		return m, loadPackages(m.managers[m.activeMgr])
 
+	case pkgInstalledMsg:
+		m.installingLoading = false
+		if msg.err != nil {
+			m.installErr = msg.err.Error()
+			return m, nil
+		}
+		// Success: close modal and reload packages
+		m.installingModal = false
+		m.installErr = ""
+		m.installPkgName = ""
+		m.loading = true
+		m.selectedPkg = nil
+		m.focusedPanel = panelList
+		return m, loadPackages(m.managers[m.activeMgr])
+
 	case orphansCheckedMsg:
 		m.checkingOrphans = false
 		if msg.err != nil {
@@ -190,8 +214,59 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key == "ctrl+c" {
 			return m, tea.Quit
 		}
-		if key == "q" && !m.searching && !m.askingPassword {
+		if key == "q" && !m.searching && !m.askingPassword && !m.installingModal {
 			return m, tea.Quit
+		}
+
+		// --- Install modal input handling ---
+		if m.installingModal {
+			switch key {
+			case "esc":
+				m.installingModal = false
+				m.installAskPassword = false
+				m.installingLoading = false
+				m.installErr = ""
+				m.installPkgName = ""
+				m.installPkgInput.Blur()
+				m.installPkgInput.SetValue("")
+				m.installPasswordInput.Blur()
+				m.installPasswordInput.SetValue("")
+				return m, nil
+			case "enter":
+				if m.installingLoading {
+					return m, nil
+				}
+				if !m.installAskPassword {
+					// First Enter: confirm the package name, move to password step
+					name := strings.TrimSpace(m.installPkgInput.Value())
+					if name == "" {
+						return m, nil
+					}
+					m.installPkgName = name
+					m.installPkgInput.Blur()
+					m.installAskPassword = true
+					m.installPasswordInput.Focus()
+					m.installPasswordInput.SetValue("")
+					return m, nil
+				}
+				// Second Enter: submit password, run install
+				pw := m.installPasswordInput.Value()
+				m.installAskPassword = false
+				m.installingLoading = true
+				m.installErr = ""
+				m.installPasswordInput.Blur()
+				m.installPasswordInput.SetValue("")
+				cmdArgs := m.managers[m.activeMgr].InstallCmd(m.installPkgName)
+				return m, installPackageCmdAsync(cmdArgs, pw)
+			default:
+				var cmd tea.Cmd
+				if m.installAskPassword {
+					m.installPasswordInput, cmd = m.installPasswordInput.Update(msg)
+				} else {
+					m.installPkgInput, cmd = m.installPkgInput.Update(msg)
+				}
+				return m, cmd
+			}
 		}
 
 		if m.askingPassword {
@@ -388,6 +463,8 @@ func (m Model) handleDetailKey(key string) (Model, tea.Cmd) {
 		return m, nil
 	case "o":
 		return m, m.startOrphanRemoval()
+	case "i":
+		return m.startInstall()
 	case "esc", "h":
 		m.focusedPanel = panelList
 	}
@@ -414,6 +491,8 @@ func (m Model) handleSidebarKey(key string) (Model, tea.Cmd) {
 		return m, loadPackages(m.managers[m.activeMgr])
 	case "o":
 		return m, m.startOrphanRemoval()
+	case "i":
+		return m.startInstall()
 	case "l", "right", "enter":
 		m.focusedPanel = panelList
 	}
@@ -500,6 +579,8 @@ func (m Model) handleListKey(key string) (Model, tea.Cmd) {
 		return m, loadPackages(m.managers[m.activeMgr])
 	case "o":
 		return m, m.startOrphanRemoval()
+	case "i":
+		return m.startInstall()
 	default:
 		m.lastKey = ""
 	}
@@ -690,6 +771,37 @@ func (m *Model) startOrphanRemoval() tea.Cmd {
 		return checkOrphansCmd(m.managers[m.activeMgr])
 	}
 	return nil
+}
+
+func (m Model) startInstall() (Model, tea.Cmd) {
+	if !m.installingModal && !m.installingLoading {
+		m.installingModal = true
+		m.installAskPassword = false
+		m.installingLoading = false
+		m.installErr = ""
+		m.installPkgName = ""
+		m.installPkgInput.SetValue("")
+		m.installPkgInput.Focus()
+		m.installPasswordInput.SetValue("")
+		m.installPasswordInput.Blur()
+		m.lastKey = ""
+	}
+	return m, nil
+}
+
+func installPackageCmdAsync(cmdArgs []string, password string) tea.Cmd {
+	return func() tea.Msg {
+		// npm doesn't need sudo, but pacman/flatpak do. We use sudo -S; if password
+		// is empty sudo will just ignore stdin for passwordless sudoers configs.
+		args := append([]string{"-S"}, cmdArgs...)
+		c := exec.Command("sudo", args...)
+		c.Stdin = strings.NewReader(password + "\n")
+		out, err := c.CombinedOutput()
+		if err != nil {
+			return pkgInstalledMsg{err: fmt.Errorf("%v: %s", err, out)}
+		}
+		return pkgInstalledMsg{err: nil}
+	}
 }
 
 

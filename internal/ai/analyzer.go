@@ -122,7 +122,10 @@ func (a *Analyzer) Analyze(ctx context.Context, pkg *pm.Package, explicitNames [
 	}
 
 	backoff := 5 * time.Second
-	for attempt := range 4 {
+	const maxAttempts = 6
+	const maxBackoff = 5 * time.Minute
+
+	for attempt := range maxAttempts {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
@@ -130,6 +133,9 @@ func (a *Analyzer) Analyze(ctx context.Context, pkg *pm.Package, explicitNames [
 			case <-time.After(backoff):
 			}
 			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
 		}
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.endpoint, bytes.NewReader(body))
@@ -159,6 +165,16 @@ func (a *Analyzer) Analyze(ctx context.Context, pkg *pm.Package, explicitNames [
 		}
 
 		if resp.StatusCode == 429 {
+			// Respect the Retry-After header if present — providers like Groq
+			// set this to the exact number of seconds to wait. Fall back to
+			// our exponential backoff if the header is absent or unparseable.
+			wait := retryAfterDelay(resp, backoff)
+			if wait > maxBackoff {
+				// The API wants us to wait longer than our cap — give up now
+				// and let the next app launch re-attempt (cache miss = retry).
+				return "", fmt.Errorf("rate limited: retry after %s (skipping for now, will retry next launch)", wait.Round(time.Second))
+			}
+			backoff = wait
 			continue
 		}
 		if resp.StatusCode != 200 {
@@ -171,8 +187,33 @@ func (a *Analyzer) Analyze(ctx context.Context, pkg *pm.Package, explicitNames [
 		}
 		return strings.TrimSpace(text), nil
 	}
-	return "", fmt.Errorf("rate limited — try again in a moment")
+	return "", fmt.Errorf("rate limited after %d attempts — skipping, will retry next launch", maxAttempts)
 }
+
+// retryAfterDelay reads the Retry-After or x-ratelimit-reset-requests header
+// from a 429 response and returns how long to wait. Falls back to the provided
+// default if the header is absent or unparseable.
+func retryAfterDelay(resp *http.Response, fallback time.Duration) time.Duration {
+	// Groq uses x-ratelimit-reset-requests (seconds as float string, e.g. "3.5s" or "3500ms")
+	// Standard HTTP uses Retry-After (integer seconds or HTTP date)
+	for _, header := range []string{"retry-after", "x-ratelimit-reset-requests"} {
+		val := strings.TrimSpace(resp.Header.Get(header))
+		if val == "" {
+			continue
+		}
+		// Try parsing as a Go duration string (e.g. "3.5s", "500ms")
+		if d, err := time.ParseDuration(val); err == nil {
+			return d
+		}
+		// Try parsing as plain integer seconds
+		var secs float64
+		if _, err := fmt.Sscanf(val, "%f", &secs); err == nil && secs > 0 {
+			return time.Duration(secs * float64(time.Second))
+		}
+	}
+	return fallback
+}
+
 
 func extractContent(data []byte, provider Provider) (string, error) {
 	if provider == Anthropic {

@@ -16,6 +16,10 @@ func (p *Npm) UninstallCmd(names []string) []string {
 	return append(args, names...)
 }
 
+func (p *Npm) InstallCmd(name string) []string {
+	return []string{"npm", "install", "-g", name}
+}
+
 func (p *Npm) UninstallOrphansCmd() []string {
 	return []string{"npm", "prune", "-g"}
 }

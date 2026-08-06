@@ -20,6 +20,10 @@ func (p *Pacman) UninstallCmd(names []string) []string {
 	return append(args, names...)
 }
 
+func (p *Pacman) InstallCmd(name string) []string {
+	return []string{"pacman", "-S", "--noconfirm", name}
+}
+
 func (p *Pacman) UninstallOrphansCmd() []string {
 	cmdStr := `orphans=$(pacman -Qtdq); if [ -n "$orphans" ]; then pacman -Rns --noconfirm $orphans; else echo "No orphan packages found."; fi`
 	return []string{"sh", "-c", cmdStr}

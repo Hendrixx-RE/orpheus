@@ -18,6 +18,11 @@ func (p *Flatpak) UninstallCmd(names []string) []string {
 	return []string{"sh", "-c", cmdStr}
 }
 
+func (p *Flatpak) InstallCmd(name string) []string {
+	cmdStr := "dbus-run-session flatpak install -y " + name
+	return []string{"sh", "-c", cmdStr}
+}
+
 func (p *Flatpak) UninstallOrphansCmd() []string {
 	cmdStr := "dbus-run-session flatpak uninstall -y --unused"
 	return []string{"sh", "-c", cmdStr}
