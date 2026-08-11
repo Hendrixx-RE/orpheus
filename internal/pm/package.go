@@ -32,6 +32,11 @@ type Manager interface {
 	UninstallOrphansCmd() []string
 	GetOrphans() ([]string, error)
 	InstallCmd(name string) []string
+	Search(query string) ([]Package, error)
+	// RequiresSudo reports whether install/uninstall commands must be run
+	// through sudo. Pacman always does; Flatpak and npm manage their own
+	// privilege escalation and must NOT be wrapped in sudo.
+	RequiresSudo() bool
 }
 
 func (p *Package) SizeMB() float64 {

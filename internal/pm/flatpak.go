@@ -11,6 +11,8 @@ func NewFlatpak() *Flatpak { return &Flatpak{} }
 
 func (p *Flatpak) Name() string { return "flatpak" }
 
+func (p *Flatpak) RequiresSudo() bool { return false }
+
 func (p *Flatpak) UninstallCmd(names []string) []string {
 	// Chain both the app removal (with data deletion) and the unused runtime cleanup.
 	// Use sh -c so we can run two commands sequentially.
@@ -21,6 +23,50 @@ func (p *Flatpak) UninstallCmd(names []string) []string {
 func (p *Flatpak) InstallCmd(name string) []string {
 	cmdStr := "dbus-run-session flatpak install -y " + name
 	return []string{"sh", "-c", cmdStr}
+}
+
+func (p *Flatpak) Search(query string) ([]Package, error) {
+	out, err := runCmdAllowExit1("flatpak", "search",
+		"--columns=application:f,name:f,version:f,description:f", query)
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(string(out), "\n")
+	var pkgs []Package
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, "\t")
+		if len(parts) < 2 {
+			continue
+		}
+		appID := strings.TrimSpace(parts[0])
+		// Skip header rows or malformed lines — all valid Flatpak app IDs contain a dot
+		if !strings.Contains(appID, ".") {
+			continue
+		}
+		name := strings.TrimSpace(parts[1])
+		version := ""
+		desc := ""
+		if len(parts) >= 3 {
+			version = strings.TrimSpace(parts[2])
+		}
+		if len(parts) >= 4 {
+			desc = strings.TrimSpace(parts[3])
+		}
+		displayDesc := name
+		if desc != "" {
+			displayDesc = name + " — " + desc
+		}
+		pkgs = append(pkgs, Package{
+			Name:        appID,
+			Version:     version,
+			Description: displayDesc,
+		})
+	}
+	return pkgs, nil
 }
 
 func (p *Flatpak) UninstallOrphansCmd() []string {

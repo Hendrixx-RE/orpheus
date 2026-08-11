@@ -113,6 +113,7 @@ Orpheus uses **vim-style navigation** throughout. The status bar always shows av
 |-----|--------|
 | `a` | AI analyze selected package |
 | `x` | Remove selected package(s) |
+| `i` | Install new package (search official repos & AUR) |
 | `o` | Clean orphan packages for active manager |
 | `/` | Search packages |
 | `?` | Search AI cache using ripgrep |
@@ -127,6 +128,9 @@ Orpheus uses **vim-style navigation** throughout. The status bar always shows av
 ### Prerequisites
 
 - **Go 1.26+**
+
+#### Optional Dependencies (Arch Linux)
+- **`yay`** or **`paru`** — Highly recommended for Arch Linux users. Enables searching and installing packages directly from the **AUR (Arch User Repository)** alongside official Arch repositories.
 
 ### Build from Source
 
@@ -203,7 +207,7 @@ orpheus/
 - [x] AI launch commands (`Command: ...`)
 - [x] Ripgrep-ready cache formatting
 - [ ] 🔨 Ripgrep AI cache search (`?` keybind)
-- [ ] Search & install via `yay` (background package cacher + instant search)
+- [x] Search & install via `yay` / `paru` / `pacman` (AUR & official repos)
 - [ ] Global cross-manager search
 - [ ] Package update commands
 

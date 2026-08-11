@@ -27,6 +27,11 @@ type pkgInstalledMsg struct {
 	err error
 }
 
+type pkgSearchResultMsg struct {
+	results []pm.Package
+	err     error
+}
+
 // BatchProgressMsg is sent by your background goroutine to update the UI
 type BatchProgressMsg struct {
 	Total   int

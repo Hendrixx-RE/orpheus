@@ -140,9 +140,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pkgDetailMsg:
 		if msg.err == nil && msg.pkg != nil {
 			m.selectedPkg = msg.pkg
-			m.removeErr = "" // clear any previous error
+			m.removeErr = ""
+			// Auto-analyze now that we have the full package detail
+			cmd := m.autoAnalyze()
 			m.detailVP.SetContent(m.buildDetailContent())
 			m.detailVP.GotoTop()
+			return m, cmd
 		}
 		return m, nil
 
@@ -186,13 +189,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Success: close modal and reload packages
-		m.installingModal = false
-		m.installErr = ""
-		m.installPkgName = ""
+		m = m.resetInstallModal()
 		m.loading = true
 		m.selectedPkg = nil
 		m.focusedPanel = panelList
 		return m, loadPackages(m.managers[m.activeMgr])
+
+	case pkgSearchResultMsg:
+		m.installSearching = false
+		if msg.err != nil {
+			m.installSearchErr = "Search failed: " + msg.err.Error()
+			m.installPkgInput.Focus()
+			return m, nil
+		}
+		if len(msg.results) == 0 {
+			m.installSearchErr = "No results for \"" + m.installPkgInput.Value() + "\""
+			m.installPkgInput.Focus()
+			return m, nil
+		}
+		m.installResults = msg.results
+		m.installResultsCursor = 0
+		m.installResultsOffset = 0
+		return m, nil
 
 	case orphansCheckedMsg:
 		m.checkingOrphans = false
@@ -220,53 +238,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// --- Install modal input handling ---
 		if m.installingModal {
-			switch key {
-			case "esc":
-				m.installingModal = false
-				m.installAskPassword = false
-				m.installingLoading = false
-				m.installErr = ""
-				m.installPkgName = ""
-				m.installPkgInput.Blur()
-				m.installPkgInput.SetValue("")
-				m.installPasswordInput.Blur()
-				m.installPasswordInput.SetValue("")
-				return m, nil
-			case "enter":
-				if m.installingLoading {
-					return m, nil
-				}
-				if !m.installAskPassword {
-					// First Enter: confirm the package name, move to password step
-					name := strings.TrimSpace(m.installPkgInput.Value())
-					if name == "" {
-						return m, nil
-					}
-					m.installPkgName = name
-					m.installPkgInput.Blur()
-					m.installAskPassword = true
-					m.installPasswordInput.Focus()
-					m.installPasswordInput.SetValue("")
-					return m, nil
-				}
-				// Second Enter: submit password, run install
-				pw := m.installPasswordInput.Value()
-				m.installAskPassword = false
-				m.installingLoading = true
-				m.installErr = ""
-				m.installPasswordInput.Blur()
-				m.installPasswordInput.SetValue("")
-				cmdArgs := m.managers[m.activeMgr].InstallCmd(m.installPkgName)
-				return m, installPackageCmdAsync(cmdArgs, pw)
-			default:
-				var cmd tea.Cmd
-				if m.installAskPassword {
-					m.installPasswordInput, cmd = m.installPasswordInput.Update(msg)
-				} else {
-					m.installPkgInput, cmd = m.installPkgInput.Update(msg)
-				}
-				return m, cmd
-			}
+			return m.handleInstallModalKey(key, msg)
 		}
 
 		if m.askingPassword {
@@ -305,7 +277,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					cmdArgs = m.managers[m.activeMgr].UninstallCmd(targets)
 				}
 
-				return m, removePackageCmdAsync(cmdArgs, pw)
+				return m, removePackageCmdAsync(cmdArgs, pw, m.managers[m.activeMgr].RequiresSudo())
 			default:
 				var cmd tea.Cmd
 				m.passwordInput, cmd = m.passwordInput.Update(msg)
@@ -413,31 +385,38 @@ func (m Model) handleKey(key string) (Model, tea.Cmd) {
 func (m Model) handleDetailKey(key string) (Model, tea.Cmd) {
 	switch key {
 	case "a":
-		if m.selectedPkg != nil && !m.aiLoading {
-			m.aiLoading = true
-			m.aiText = ""
-			m.aiErr = ""
+		// Manual retry — only useful if auto-analysis errored
+		if m.selectedPkg != nil && !m.aiLoading && m.aiErr != "" {
+			cmd := m.autoAnalyze()
 			m.detailVP.SetContent(m.buildDetailContent())
 			m.lastKey = ""
-
-			var explicitNames []string
-			for _, p := range m.allPkgs {
-				if p.InstallReason == "Explicitly installed" {
-					explicitNames = append(explicitNames, p.Name)
-				}
-			}
-			return m, analyzePackage(m.aiSvc, m.cache, m.selectedPkg, explicitNames)
+			return m, cmd
 		}
 	case "x":
 		if (m.selectedPkg != nil || len(m.selectedPkgs) > 1) && !m.removingLoading && !m.aiLoading {
-			m.askingPassword = true
 			m.removeErr = ""
-			m.passwordInput.Focus()
-			m.passwordInput.SetValue("")
-			if len(m.selectedPkgs) > 1 {
-				m.detailVP.SetContent(m.buildBatchDetailContent())
+			if m.managers[m.activeMgr].RequiresSudo() {
+				// Pacman: ask for sudo password first
+				m.askingPassword = true
+				m.passwordInput.Focus()
+				m.passwordInput.SetValue("")
+				if len(m.selectedPkgs) > 1 {
+					m.detailVP.SetContent(m.buildBatchDetailContent())
+				} else {
+					m.detailVP.SetContent(m.buildDetailContent())
+				}
 			} else {
-				m.detailVP.SetContent(m.buildDetailContent())
+				// Flatpak / npm: run directly, no password needed
+				m.removingLoading = true
+				targets := m.getSelectedNames()
+				cmdArgs := m.managers[m.activeMgr].UninstallCmd(targets)
+				if len(m.selectedPkgs) > 1 {
+					m.detailVP.SetContent(m.buildBatchDetailContent())
+				} else {
+					m.detailVP.SetContent(m.buildDetailContent())
+				}
+				m.lastKey = ""
+				return m, removePackageCmdAsync(cmdArgs, "", false)
 			}
 			m.lastKey = ""
 			return m, nil
@@ -628,13 +607,45 @@ func (m *Model) triggerSelect() tea.Cmd {
 	m.aiText = ""
 	m.aiErr = ""
 	m.aiLoading = false
-	m.detailVP.SetContent(m.buildDetailContent())
-	m.detailVP.GotoTop()
 
 	if pkg.Size == 0 {
+		// Need full detail first — analysis will be triggered in pkgDetailMsg handler
+		m.detailVP.SetContent(m.buildDetailContent())
+		m.detailVP.GotoTop()
 		return loadPackageDetail(m.managers[m.activeMgr], pkg.Name)
 	}
-	return nil
+
+	// Auto-analyze: serve from cache instantly, or fire the request
+	cmd := m.autoAnalyze()
+	m.detailVP.SetContent(m.buildDetailContent())
+	m.detailVP.GotoTop()
+	return cmd
+}
+
+// autoAnalyze checks the cache for the current selectedPkg and either
+// populates aiText immediately (cache hit) or fires analyzePackage (miss).
+// It must be called after selectedPkg is set.
+func (m *Model) autoAnalyze() tea.Cmd {
+	if m.selectedPkg == nil {
+		return nil
+	}
+	key := m.selectedPkg.Name + "@" + m.selectedPkg.Version
+	if text, ok := m.cache.Get(key); ok {
+		m.aiText = text
+		m.aiLoading = false
+		return nil
+	}
+	// Not cached yet — fire background analysis
+	m.aiLoading = true
+	m.aiText = ""
+	m.aiErr = ""
+	var explicitNames []string
+	for _, p := range m.allPkgs {
+		if p.InstallReason == "Explicitly installed" {
+			explicitNames = append(explicitNames, p.Name)
+		}
+	}
+	return analyzePackage(m.aiSvc, m.cache, m.selectedPkg, explicitNames)
 }
 
 func (m Model) buildDetailContent() string {
@@ -694,6 +705,7 @@ func (m Model) buildDetailContent() string {
 		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Analyzing...") + "\n")
 	case m.aiErr != "":
 		sb.WriteString(styleOrphan.Render(m.aiErr) + "\n")
+		sb.WriteString(styleDimmed.Render("Press a to retry") + "\n")
 	case m.aiText != "":
 		body, verdict, command := splitVerdict(m.aiText)
 		sb.WriteString(styleVal.Render(wrapText(strings.TrimSpace(body), m.detailWidth()-8)) + "\n\n")
@@ -704,7 +716,7 @@ func (m Model) buildDetailContent() string {
 			sb.WriteString(styleAILabel.Render(command) + "\n")
 		}
 	default:
-		sb.WriteString(styleDimmed.Render("Press a to analyze, x to remove") + "\n")
+		sb.WriteString(styleDimmed.Render("Press x to remove") + "\n")
 	}
 
 	return sb.String()
@@ -773,29 +785,232 @@ func (m *Model) startOrphanRemoval() tea.Cmd {
 	return nil
 }
 
+func (m Model) resetInstallModal() Model {
+	m.installingModal = false
+	m.installAskPassword = false
+	m.installingLoading = false
+	m.installErr = ""
+	m.installSearchErr = ""
+	m.installPkgName = ""
+	m.installResults = nil
+	m.installResultsCursor = 0
+	m.installResultsOffset = 0
+	m.installSearching = false
+	m.installShowDesc = false
+	m.installPkgInput.Blur()
+	m.installPkgInput.SetValue("")
+	m.installPasswordInput.Blur()
+	m.installPasswordInput.SetValue("")
+	return m
+}
+
 func (m Model) startInstall() (Model, tea.Cmd) {
 	if !m.installingModal && !m.installingLoading {
+		m = m.resetInstallModal()
 		m.installingModal = true
-		m.installAskPassword = false
-		m.installingLoading = false
-		m.installErr = ""
-		m.installPkgName = ""
-		m.installPkgInput.SetValue("")
 		m.installPkgInput.Focus()
-		m.installPasswordInput.SetValue("")
-		m.installPasswordInput.Blur()
 		m.lastKey = ""
 	}
 	return m, nil
 }
 
-func installPackageCmdAsync(cmdArgs []string, password string) tea.Cmd {
+// handleInstallModalKey is the keyboard handler for the install modal.
+// The modal has five phases driven by state flags:
+//
+//	search input → (Enter) → searching → results list → (Enter) → password → (Enter) → installing
+//
+// Esc navigates backwards through the phases.
+func (m Model) handleInstallModalKey(key string, msg tea.KeyMsg) (Model, tea.Cmd) {
+	const listVisibleH = 8 // rows of results shown at once
+
+	// ── Phase: installing (spinner) ──────────────────────────────────────
+	if m.installingLoading {
+		// Nothing to do while installing; Esc would be confusing here.
+		return m, nil
+	}
+
+	// ── Phase: install error ─────────────────────────────────────────────
+	if m.installErr != "" {
+		switch key {
+		case "esc", "enter":
+			// Reset to search so the user can try something else
+			m.installErr = ""
+			m.installResults = nil
+			m.installResultsCursor = 0
+			m.installResultsOffset = 0
+			m.installPkgInput.Focus()
+		}
+		return m, nil
+	}
+
+	// ── Phase: password input ────────────────────────────────────────────
+	if m.installAskPassword {
+		switch key {
+		case "esc":
+			// Go back to results list (or search if no results)
+			m.installAskPassword = false
+			m.installPasswordInput.Blur()
+			m.installPasswordInput.SetValue("")
+		case "enter":
+			pw := m.installPasswordInput.Value()
+			m.installAskPassword = false
+			m.installingLoading = true
+			m.installErr = ""
+			m.installPasswordInput.Blur()
+			m.installPasswordInput.SetValue("")
+			cmdArgs := m.managers[m.activeMgr].InstallCmd(m.installPkgName)
+			needsSudo := m.managers[m.activeMgr].RequiresSudo()
+			return m, installPackageCmdAsync(cmdArgs, pw, needsSudo)
+		default:
+			var cmd tea.Cmd
+			m.installPasswordInput, cmd = m.installPasswordInput.Update(msg)
+			return m, cmd
+		}
+		return m, nil
+	}
+
+	// ── Phase: package description popup ────────────────────────────────
+	if m.installShowDesc && len(m.installResults) > 0 {
+		switch key {
+		case "esc", "tab":
+			m.installShowDesc = false
+		case "enter":
+			m.installShowDesc = false
+			pkg := m.installResults[m.installResultsCursor]
+			m.installPkgName = pkg.Name
+			if m.managers[m.activeMgr].RequiresSudo() {
+				// Ask for sudo password before installing
+				m.installAskPassword = true
+				m.installPasswordInput.Focus()
+				m.installPasswordInput.SetValue("")
+			} else {
+				// Flatpak / npm — run directly, no password needed
+				m.installingLoading = true
+				m.installErr = ""
+				cmdArgs := m.managers[m.activeMgr].InstallCmd(m.installPkgName)
+				return m, installPackageCmdAsync(cmdArgs, "", false)
+			}
+		}
+		return m, nil
+	}
+
+	// ── Phase: results list ──────────────────────────────────────────────
+	if len(m.installResults) > 0 {
+		switch key {
+		case "tab":
+			m.installShowDesc = true
+		case "esc", "/":
+			// Back to search input
+			m.installResults = nil
+			m.installResultsCursor = 0
+			m.installResultsOffset = 0
+			m.installSearchErr = ""
+			m.installShowDesc = false
+			m.installPkgInput.Focus()
+		case "j", "down":
+			if m.installResultsCursor < len(m.installResults)-1 {
+				m.installResultsCursor++
+				if m.installResultsCursor >= m.installResultsOffset+listVisibleH {
+					m.installResultsOffset = m.installResultsCursor - listVisibleH + 1
+				}
+			}
+		case "k", "up":
+			if m.installResultsCursor > 0 {
+				m.installResultsCursor--
+				if m.installResultsCursor < m.installResultsOffset {
+					m.installResultsOffset = m.installResultsCursor
+				}
+			}
+		case "enter":
+			pkg := m.installResults[m.installResultsCursor]
+			m.installPkgName = pkg.Name
+			if m.managers[m.activeMgr].RequiresSudo() {
+				// Ask for sudo password before installing
+				m.installAskPassword = true
+				m.installPasswordInput.Focus()
+				m.installPasswordInput.SetValue("")
+			} else {
+				// Flatpak / npm — run directly, no password needed
+				m.installingLoading = true
+				m.installErr = ""
+				cmdArgs := m.managers[m.activeMgr].InstallCmd(m.installPkgName)
+				return m, installPackageCmdAsync(cmdArgs, "", false)
+			}
+		}
+		return m, nil
+	}
+
+	// ── Phase: searching (spinner) ───────────────────────────────────────
+	if m.installSearching {
+		if key == "esc" {
+			m.installSearching = false
+			m.installPkgInput.Focus()
+		}
+		return m, nil
+	}
+
+	// ── Phase: search error ──────────────────────────────────────────────
+	if m.installSearchErr != "" {
+		switch key {
+		case "esc":
+			m.installSearchErr = ""
+			m.installPkgInput.Focus()
+		case "enter":
+			// Retry the same query
+			query := strings.TrimSpace(m.installPkgInput.Value())
+			if query == "" {
+				m.installSearchErr = ""
+				m.installPkgInput.Focus()
+				return m, nil
+			}
+			m.installSearchErr = ""
+			m.installSearching = true
+			m.installPkgInput.Blur()
+			return m, searchPackagesCmd(m.managers[m.activeMgr], query)
+		}
+		return m, nil
+	}
+
+	// ── Phase: search input (default) ────────────────────────────────────
+	switch key {
+	case "esc":
+		m = m.resetInstallModal()
+	case "enter":
+		query := strings.TrimSpace(m.installPkgInput.Value())
+		if len(query) < 2 {
+			return m, nil // require at least 2 characters
+		}
+		m.installSearching = true
+		m.installPkgInput.Blur()
+		return m, searchPackagesCmd(m.managers[m.activeMgr], query)
+	default:
+		var cmd tea.Cmd
+		m.installPkgInput, cmd = m.installPkgInput.Update(msg)
+		return m, cmd
+	}
+	return m, nil
+}
+
+func searchPackagesCmd(mgr pm.Manager, query string) tea.Cmd {
 	return func() tea.Msg {
-		// npm doesn't need sudo, but pacman/flatpak do. We use sudo -S; if password
-		// is empty sudo will just ignore stdin for passwordless sudoers configs.
-		args := append([]string{"-S"}, cmdArgs...)
-		c := exec.Command("sudo", args...)
-		c.Stdin = strings.NewReader(password + "\n")
+		results, err := mgr.Search(query)
+		return pkgSearchResultMsg{results: results, err: err}
+	}
+}
+
+
+func installPackageCmdAsync(cmdArgs []string, password string, needsSudo bool) tea.Cmd {
+	return func() tea.Msg {
+		var c *exec.Cmd
+		if needsSudo {
+			// Pipe the password to sudo -S via stdin
+			args := append([]string{"-S"}, cmdArgs...)
+			c = exec.Command("sudo", args...)
+			c.Stdin = strings.NewReader(password + "\n")
+		} else {
+			// Flatpak and npm handle their own permissions — never wrap in sudo
+			c = exec.Command(cmdArgs[0], cmdArgs[1:]...)
+		}
 		out, err := c.CombinedOutput()
 		if err != nil {
 			return pkgInstalledMsg{err: fmt.Errorf("%v: %s", err, out)}
@@ -888,11 +1103,17 @@ func maxI(a, b int) int {
 	return b
 }
 
-func removePackageCmdAsync(cmdArgs []string, password string) tea.Cmd {
+func removePackageCmdAsync(cmdArgs []string, password string, needsSudo bool) tea.Cmd {
 	return func() tea.Msg {
-		args := append([]string{"-S"}, cmdArgs...)
-		c := exec.Command("sudo", args...)
-		c.Stdin = strings.NewReader(password + "\n")
+		var c *exec.Cmd
+		if needsSudo {
+			args := append([]string{"-S"}, cmdArgs...)
+			c = exec.Command("sudo", args...)
+			c.Stdin = strings.NewReader(password + "\n")
+		} else {
+			// Flatpak and npm handle their own permissions
+			c = exec.Command(cmdArgs[0], cmdArgs[1:]...)
+		}
 		out, err := c.CombinedOutput()
 		if err != nil {
 			return pkgRemovedMsg{err: fmt.Errorf("%v: %s", err, out)}

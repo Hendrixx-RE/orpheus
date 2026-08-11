@@ -11,6 +11,8 @@ func NewNpm() *Npm { return &Npm{} }
 
 func (p *Npm) Name() string { return "node" }
 
+func (p *Npm) RequiresSudo() bool { return false }
+
 func (p *Npm) UninstallCmd(names []string) []string {
 	args := []string{"npm", "uninstall", "-g"}
 	return append(args, names...)
@@ -18,6 +20,35 @@ func (p *Npm) UninstallCmd(names []string) []string {
 
 func (p *Npm) InstallCmd(name string) []string {
 	return []string{"npm", "install", "-g", name}
+}
+
+func (p *Npm) Search(query string) ([]Package, error) {
+	out, err := runCmd("npm", "search", "--json", "--prefer-online", query)
+	if err != nil {
+		return nil, err
+	}
+	var items []struct {
+		Name        string `json:"name"`
+		Version     string `json:"version"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(out, &items); err != nil {
+		return nil, err
+	}
+	// Cap results to avoid an overwhelming list
+	const maxResults = 25
+	if len(items) > maxResults {
+		items = items[:maxResults]
+	}
+	var pkgs []Package
+	for _, item := range items {
+		pkgs = append(pkgs, Package{
+			Name:        item.Name,
+			Version:     item.Version,
+			Description: item.Description,
+		})
+	}
+	return pkgs, nil
 }
 
 func (p *Npm) UninstallOrphansCmd() []string {

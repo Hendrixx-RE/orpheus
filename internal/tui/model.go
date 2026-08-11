@@ -77,13 +77,20 @@ type Model struct {
 	passwordInput   textinput.Model
 
 	// install state
-	installingModal    bool
-	installPkgInput    textinput.Model
-	installAskPassword bool
+	installingModal      bool
+	installPkgInput      textinput.Model
+	installAskPassword   bool
 	installPasswordInput textinput.Model
-	installingLoading  bool
-	installErr         string
-	installPkgName     string
+	installingLoading    bool
+	installErr           string
+	installPkgName       string
+	// install search results
+	installResults       []pm.Package
+	installResultsCursor int
+	installResultsOffset int
+	installSearching     bool
+	installSearchErr     string
+	installShowDesc      bool
 
 	spinner spinner.Model
 	lastKey string
@@ -116,7 +123,7 @@ func New() Model {
 	pi.CharLimit = 64
 
 	ii := textinput.New()
-	ii.Placeholder = "package name..."
+	ii.Placeholder = "search packages..."
 	ii.CharLimit = 128
 
 	ipi := textinput.New()

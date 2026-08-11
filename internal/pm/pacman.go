@@ -15,13 +15,96 @@ func NewPacman() *Pacman { return &Pacman{} }
 
 func (p *Pacman) Name() string { return "pacman" }
 
+func getPacmanHelper() string {
+	if _, err := exec.LookPath("yay"); err == nil {
+		return "yay"
+	}
+	if _, err := exec.LookPath("paru"); err == nil {
+		return "paru"
+	}
+	return "pacman"
+}
+
+func (p *Pacman) RequiresSudo() bool {
+	// yay and paru build AUR packages as unprivileged user and escalate via sudo internally.
+	// Running yay/paru directly under sudo breaks makepkg.
+	if helper := getPacmanHelper(); helper == "yay" || helper == "paru" {
+		return false
+	}
+	return true
+}
+
 func (p *Pacman) UninstallCmd(names []string) []string {
-	args := []string{"pacman", "-Rns", "--noconfirm"}
+	helper := getPacmanHelper()
+	args := []string{helper, "-Rns", "--noconfirm"}
 	return append(args, names...)
 }
 
 func (p *Pacman) InstallCmd(name string) []string {
-	return []string{"pacman", "-S", "--noconfirm", name}
+	helper := getPacmanHelper()
+	return []string{helper, "-S", "--noconfirm", name}
+}
+
+func (p *Pacman) Search(query string) ([]Package, error) {
+	helper := getPacmanHelper()
+	out, err := runCmdAllowExit1(helper, "-Ss", "--color=never", query)
+	if err != nil {
+		return nil, err
+	}
+	return parsePacmanSs(out), nil
+}
+
+// parsePacmanSs parses `pacman -Ss` or `yay -Ss` / `paru -Ss` output.
+// Format alternates between:
+//
+//	repo/name version [flags]
+//	    Description text
+func parsePacmanSs(data []byte) []Package {
+	lines := strings.Split(string(data), "\n")
+	var pkgs []Package
+	var cur *Package
+	var curRepo string
+
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		if len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
+			// Description continuation
+			if cur != nil {
+				desc := strings.TrimSpace(line)
+				if curRepo != "" {
+					desc = "[" + curRepo + "] " + desc
+				}
+				cur.Description = desc
+				pkgs = append(pkgs, *cur)
+				cur = nil
+				curRepo = ""
+			}
+		} else {
+			// Package line: "repo/name version [installed] ..."
+			parts := strings.Fields(line)
+			if len(parts) < 2 {
+				continue
+			}
+			namePart := parts[0]
+			repo := ""
+			if idx := strings.Index(namePart, "/"); idx >= 0 {
+				repo = namePart[:idx]
+				namePart = namePart[idx+1:]
+			}
+			curRepo = repo
+			cur = &Package{
+				Name:    namePart,
+				Version: parts[1],
+			}
+		}
+	}
+	// Flush last package if it had no description line
+	if cur != nil {
+		pkgs = append(pkgs, *cur)
+	}
+	return pkgs
 }
 
 func (p *Pacman) UninstallOrphansCmd() []string {

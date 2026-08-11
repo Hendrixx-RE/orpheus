@@ -18,6 +18,7 @@
 | Cache | `~/.cache/orpheus/analysis.json` |
 | Binary | `orpheus` (built with `go build`) |
 | Target OS | Linux (Arch-based, uses `pacman`) |
+| Optional Deps | `yay` or `paru` (for AUR search & install support) |
 | Theme | Gruvbox Dark |
 
 ---
