@@ -15,8 +15,9 @@ type pkgDetailMsg struct {
 }
 
 type aiAnalysisMsg struct {
-	text string
-	err  error
+	pkgKey string
+	text   string
+	err    error
 }
 
 type pkgRemovedMsg struct {
@@ -34,6 +35,7 @@ type pkgSearchResultMsg struct {
 
 // BatchProgressMsg is sent by your background goroutine to update the UI
 type BatchProgressMsg struct {
+	BatchID uint64
 	Total   int
 	Current int
 	PkgName string
@@ -41,6 +43,7 @@ type BatchProgressMsg struct {
 }
 
 type processNextBatchPkgMsg struct {
+	BatchID       uint64
 	MissingPkgs   []pm.Package
 	CurrentIdx    int
 	ExplicitNames []string

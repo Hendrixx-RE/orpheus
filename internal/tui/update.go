@@ -41,6 +41,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case BatchProgressMsg:
+		if msg.BatchID != m.batchID {
+			return m, nil
+		}
 		m.batchActive = !msg.Done
 		m.batchTotal = msg.Total
 		m.batchCurrent = msg.Current
@@ -58,14 +61,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case processNextBatchPkgMsg:
+		if msg.BatchID != m.batchID {
+			return m, nil
+		}
 		if msg.CurrentIdx >= len(msg.MissingPkgs) {
-			return m, func() tea.Msg { return BatchProgressMsg{Done: true} }
+			return m, func() tea.Msg { return BatchProgressMsg{BatchID: msg.BatchID, Done: true} }
 		}
 
 		pkg := msg.MissingPkgs[msg.CurrentIdx]
 
 		progressCmd := func() tea.Msg {
 			return BatchProgressMsg{
+				BatchID: msg.BatchID,
 				Total:   len(msg.MissingPkgs),
 				Current: msg.CurrentIdx,
 				PkgName: pkg.Name,
@@ -80,11 +87,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				text, err := m.aiSvc.Analyze(context.Background(), &pkg, msg.ExplicitNames)
 				if err == nil {
 					m.cache.Set(key, text)
+					time.Sleep(2500 * time.Millisecond) // 2.5s pacing (24 RPM) to respect API rate limits
+				} else {
+					// On rate limit or error, pause background batch for 10s before attempting next item
+					time.Sleep(10 * time.Second)
 				}
-				time.Sleep(200 * time.Millisecond) // slight delay to avoid hammering API
 			}
 
 			return processNextBatchPkgMsg{
+				BatchID:       msg.BatchID,
 				MissingPkgs:   msg.MissingPkgs,
 				CurrentIdx:    msg.CurrentIdx + 1,
 				ExplicitNames: msg.ExplicitNames,
@@ -128,14 +139,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.filteredPkgs = msg.pkgs
 		m.applyFilter()
 
-		// Only trigger background batch analysis if one isn't already running.
-		// Without this guard, every reload (manager switch, post-install, post-remove)
-		// would fire a full second batch while the first was still mid-flight,
-		// causing every package to be analyzed multiple times.
-		if !m.batchActive {
-			return m, triggerBatchAnalysis(m.cache, m.allPkgs)
-		}
-		return m, nil
+		// Advance batchID so any previous batch loop stops processing,
+		// and start a fresh batch analysis for current manager's packages.
+		m.batchID++
+		m.batchActive = true
+		return m, triggerBatchAnalysis(m.batchID, m.cache, m.allPkgs)
 
 	case pkgDetailMsg:
 		if msg.err == nil && msg.pkg != nil {
@@ -150,13 +158,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case aiAnalysisMsg:
-		m.aiLoading = false
-		if msg.err != nil {
-			m.aiErr = "AI unavailable: " + msg.err.Error()
-		} else {
-			m.aiText = msg.text
-		}
-		if m.selectedPkg != nil {
+		if m.selectedPkg != nil && (m.selectedPkg.Name+"@"+m.selectedPkg.Version) == msg.pkgKey {
+			m.aiLoading = false
+			if msg.err != nil {
+				m.aiErr = "AI unavailable: " + msg.err.Error()
+			} else {
+				m.aiText = msg.text
+				m.aiErr = ""
+			}
 			m.detailVP.SetContent(m.buildDetailContent())
 		}
 		return m, nil
@@ -177,6 +186,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.removingOrphans = false
 		m.checkingOrphans = false
 		m.orphanList = nil
+		m.selectedPkgs = make(map[string]bool)
 		m.loading = true
 		m.selectedPkg = nil
 		m.focusedPanel = panelList
@@ -382,6 +392,53 @@ func (m Model) handleKey(key string) (Model, tea.Cmd) {
 	return m.handleListKey(key)
 }
 
+func (m Model) startRemoval() (Model, tea.Cmd) {
+	targets := m.getSelectedNames()
+	if len(targets) == 0 || m.removingLoading {
+		return m, nil
+	}
+
+	m.removeErr = ""
+
+	// Ensure selectedPkg is updated if targeting a single package from list cursor
+	if len(targets) == 1 {
+		pkgName := targets[0]
+		if m.selectedPkg == nil || m.selectedPkg.Name != pkgName {
+			for i := range m.filteredPkgs {
+				if m.filteredPkgs[i].Name == pkgName {
+					m.selectedPkg = &m.filteredPkgs[i]
+					break
+				}
+			}
+		}
+	}
+
+	if m.managers[m.activeMgr].RequiresSudo() {
+		// Pacman: ask for sudo password first
+		m.askingPassword = true
+		m.passwordInput.Focus()
+		m.passwordInput.SetValue("")
+		if len(targets) > 1 {
+			m.detailVP.SetContent(m.buildBatchDetailContent())
+		} else {
+			m.detailVP.SetContent(m.buildDetailContent())
+		}
+		m.lastKey = ""
+		return m, nil
+	}
+
+	// Flatpak / npm: run directly, no password needed
+	m.removingLoading = true
+	cmdArgs := m.managers[m.activeMgr].UninstallCmd(targets)
+	if len(targets) > 1 {
+		m.detailVP.SetContent(m.buildBatchDetailContent())
+	} else {
+		m.detailVP.SetContent(m.buildDetailContent())
+	}
+	m.lastKey = ""
+	return m, removePackageCmdAsync(cmdArgs, "", false)
+}
+
 func (m Model) handleDetailKey(key string) (Model, tea.Cmd) {
 	switch key {
 	case "a":
@@ -393,34 +450,7 @@ func (m Model) handleDetailKey(key string) (Model, tea.Cmd) {
 			return m, cmd
 		}
 	case "x":
-		if (m.selectedPkg != nil || len(m.selectedPkgs) > 1) && !m.removingLoading && !m.aiLoading {
-			m.removeErr = ""
-			if m.managers[m.activeMgr].RequiresSudo() {
-				// Pacman: ask for sudo password first
-				m.askingPassword = true
-				m.passwordInput.Focus()
-				m.passwordInput.SetValue("")
-				if len(m.selectedPkgs) > 1 {
-					m.detailVP.SetContent(m.buildBatchDetailContent())
-				} else {
-					m.detailVP.SetContent(m.buildDetailContent())
-				}
-			} else {
-				// Flatpak / npm: run directly, no password needed
-				m.removingLoading = true
-				targets := m.getSelectedNames()
-				cmdArgs := m.managers[m.activeMgr].UninstallCmd(targets)
-				if len(m.selectedPkgs) > 1 {
-					m.detailVP.SetContent(m.buildBatchDetailContent())
-				} else {
-					m.detailVP.SetContent(m.buildDetailContent())
-				}
-				m.lastKey = ""
-				return m, removePackageCmdAsync(cmdArgs, "", false)
-			}
-			m.lastKey = ""
-			return m, nil
-		}
+		return m.startRemoval()
 	case "j", "down":
 		m.detailVP.ScrollDown(1)
 	case "k", "up":
@@ -481,6 +511,8 @@ func (m Model) handleSidebarKey(key string) (Model, tea.Cmd) {
 
 func (m Model) handleListKey(key string) (Model, tea.Cmd) {
 	switch key {
+	case "x":
+		return m.startRemoval()
 	case " ":
 		m.commitVisualSelection()
 		if len(m.filteredPkgs) > 0 {
@@ -994,6 +1026,9 @@ func (m Model) handleInstallModalKey(key string, msg tea.KeyMsg) (Model, tea.Cmd
 func searchPackagesCmd(mgr pm.Manager, query string) tea.Cmd {
 	return func() tea.Msg {
 		results, err := mgr.Search(query)
+		if err == nil && len(results) > 0 {
+			results = pm.RankSearchResults(query, results)
+		}
 		return pkgSearchResultMsg{results: results, err: err}
 	}
 }
@@ -1122,7 +1157,7 @@ func removePackageCmdAsync(cmdArgs []string, password string, needsSudo bool) te
 	}
 }
 
-func triggerBatchAnalysis(c *cache.Cache, pkgs []pm.Package) tea.Cmd {
+func triggerBatchAnalysis(batchID uint64, c *cache.Cache, pkgs []pm.Package) tea.Cmd {
 	return func() tea.Msg {
 		var missing []pm.Package
 		var explicitNames []string
@@ -1138,10 +1173,11 @@ func triggerBatchAnalysis(c *cache.Cache, pkgs []pm.Package) tea.Cmd {
 		}
 
 		if len(missing) == 0 {
-			return BatchProgressMsg{Done: true}
+			return BatchProgressMsg{BatchID: batchID, Done: true}
 		}
 
 		return processNextBatchPkgMsg{
+			BatchID:       batchID,
 			MissingPkgs:   missing,
 			CurrentIdx:    0,
 			ExplicitNames: explicitNames,

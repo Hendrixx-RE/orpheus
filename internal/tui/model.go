@@ -55,6 +55,7 @@ type Model struct {
 
 	// batch background sync
 	batchActive  bool
+	batchID      uint64
 	batchTotal   int
 	batchCurrent int
 	batchPkg     string
@@ -182,14 +183,14 @@ func analyzePackage(a *ai.Analyzer, c *cache.Cache, pkg *pm.Package, explicitNam
 	return func() tea.Msg {
 		key := pkg.Name + "@" + pkg.Version
 		if text, ok := c.Get(key); ok {
-			return aiAnalysisMsg{text: text}
+			return aiAnalysisMsg{pkgKey: key, text: text}
 		}
 		text, err := a.Analyze(context.Background(), pkg, explicitNames)
 		if err != nil {
-			return aiAnalysisMsg{err: err}
+			return aiAnalysisMsg{pkgKey: key, err: err}
 		}
 		c.Set(key, text)
-		return aiAnalysisMsg{text: text}
+		return aiAnalysisMsg{pkgKey: key, text: text}
 	}
 }
 

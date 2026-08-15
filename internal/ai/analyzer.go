@@ -11,10 +11,47 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"orpheus/internal/pm"
 )
+
+type sfCall struct {
+	wg  sync.WaitGroup
+	val string
+	err error
+}
+
+type singleflightGroup struct {
+	mu sync.Mutex
+	m  map[string]*sfCall
+}
+
+func (g *singleflightGroup) Do(key string, fn func() (string, error)) (string, error) {
+	g.mu.Lock()
+	if g.m == nil {
+		g.m = make(map[string]*sfCall)
+	}
+	if c, ok := g.m[key]; ok {
+		g.mu.Unlock()
+		c.wg.Wait()
+		return c.val, c.err
+	}
+	c := new(sfCall)
+	c.wg.Add(1)
+	g.m[key] = c
+	g.mu.Unlock()
+
+	c.val, c.err = fn()
+	c.wg.Done()
+
+	g.mu.Lock()
+	delete(g.m, key)
+	g.mu.Unlock()
+
+	return c.val, c.err
+}
 
 const (
 	defaultGroqModel      = "llama-3.3-70b-versatile"
@@ -38,11 +75,14 @@ const (
 )
 
 type Analyzer struct {
-	provider Provider
-	model    string
-	endpoint string
-	apiKey   string
-	client   *http.Client
+	provider         Provider
+	model            string
+	endpoint         string
+	apiKey           string
+	client           *http.Client
+	sf               singleflightGroup
+	mu               sync.Mutex
+	rateLimitedUntil time.Time
 }
 
 func New() *Analyzer {
@@ -97,6 +137,28 @@ func (a *Analyzer) Analyze(ctx context.Context, pkg *pm.Package, explicitNames [
 	if a.apiKey == "" {
 		return "", fmt.Errorf("%s API key not set in .env", strings.ToUpper(string(a.provider)))
 	}
+
+	a.mu.Lock()
+	if time.Now().Before(a.rateLimitedUntil) {
+		remaining := time.Until(a.rateLimitedUntil).Round(time.Second)
+		a.mu.Unlock()
+		return "", fmt.Errorf("rate limited: cooling down for %s", remaining)
+	}
+	a.mu.Unlock()
+
+	key := pkg.Name + "@" + pkg.Version
+	return a.sf.Do(key, func() (string, error) {
+		res, err := a.analyzeUncached(ctx, pkg, explicitNames)
+		if err != nil && strings.Contains(err.Error(), "rate limited") {
+			a.mu.Lock()
+			a.rateLimitedUntil = time.Now().Add(30 * time.Second)
+			a.mu.Unlock()
+		}
+		return res, err
+	})
+}
+
+func (a *Analyzer) analyzeUncached(ctx context.Context, pkg *pm.Package, explicitNames []string) (string, error) {
 
 	var body []byte
 	systemPrompt := "You are a Linux package analyzer. Give concise, honest analysis. No markdown headers or bullet points. Plain text only."
@@ -190,10 +252,14 @@ func (a *Analyzer) Analyze(ctx context.Context, pkg *pm.Package, explicitNames [
 	return "", fmt.Errorf("rate limited after %d attempts — skipping, will retry next launch", maxAttempts)
 }
 
+const minRetryDelay = 3 * time.Second
+
 // retryAfterDelay reads the Retry-After or x-ratelimit-reset-requests header
 // from a 429 response and returns how long to wait. Falls back to the provided
-// default if the header is absent or unparseable.
+// default if the header is absent or unparseable. Enforces a minimum backoff floor
+// of 3 seconds to prevent sub-millisecond retry loops on small header values (e.g. 0.002s).
 func retryAfterDelay(resp *http.Response, fallback time.Duration) time.Duration {
+	delay := fallback
 	// Groq uses x-ratelimit-reset-requests (seconds as float string, e.g. "3.5s" or "3500ms")
 	// Standard HTTP uses Retry-After (integer seconds or HTTP date)
 	for _, header := range []string{"retry-after", "x-ratelimit-reset-requests"} {
@@ -203,15 +269,20 @@ func retryAfterDelay(resp *http.Response, fallback time.Duration) time.Duration 
 		}
 		// Try parsing as a Go duration string (e.g. "3.5s", "500ms")
 		if d, err := time.ParseDuration(val); err == nil {
-			return d
+			delay = d
+			break
 		}
 		// Try parsing as plain integer seconds
 		var secs float64
 		if _, err := fmt.Sscanf(val, "%f", &secs); err == nil && secs > 0 {
-			return time.Duration(secs * float64(time.Second))
+			delay = time.Duration(secs * float64(time.Second))
+			break
 		}
 	}
-	return fallback
+	if delay < minRetryDelay {
+		delay = minRetryDelay
+	}
+	return delay
 }
 
 

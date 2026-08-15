@@ -47,11 +47,49 @@ func (p *Pacman) InstallCmd(name string) []string {
 
 func (p *Pacman) Search(query string) ([]Package, error) {
 	helper := getPacmanHelper()
-	out, err := runCmdAllowExit1(helper, "-Ss", "--color=never", query)
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" {
+		return nil, nil
+	}
+
+	words := strings.Fields(trimmed)
+	var args []string
+	if len(words) > 1 {
+		args = append([]string{"-Ss", "--color=never"}, words...)
+	} else {
+		args = []string{"-Ss", "--color=never", trimmed}
+	}
+
+	out, err := runCmdAllowExit1(helper, args...)
 	if err != nil {
 		return nil, err
 	}
-	return parsePacmanSs(out), nil
+
+	pkgs := parsePacmanSs(out)
+
+	// If multi-word search returned nothing, try first token
+	if len(pkgs) == 0 && len(words) > 1 {
+		if out, err = runCmdAllowExit1(helper, "-Ss", "--color=never", words[0]); err == nil {
+			pkgs = parsePacmanSs(out)
+		}
+	}
+
+	// If query yielded 0 results, build a regex fallback matching characters sequentially
+	if len(pkgs) == 0 && len(trimmed) >= 3 && !strings.ContainsAny(trimmed, ".*+?^$[](){}|\\") {
+		var regexPattern strings.Builder
+		for i, r := range trimmed {
+			if i > 0 {
+				regexPattern.WriteString(".*")
+			}
+			regexPattern.WriteRune(r)
+		}
+		if out, err = runCmdAllowExit1(helper, "-Ss", "--color=never", regexPattern.String()); err == nil {
+			pkgs = parsePacmanSs(out)
+		}
+	}
+
+	// Apply fuzzy ranking so best exact and fuzzy matches appear at the top
+	return RankSearchResults(trimmed, pkgs), nil
 }
 
 // parsePacmanSs parses `pacman -Ss` or `yay -Ss` / `paru -Ss` output.
