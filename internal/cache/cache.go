@@ -39,6 +39,32 @@ func (c *Cache) Get(key string) (string, bool) {
 	return v, ok
 }
 
+// GetPackage retrieves analysis text checking both "name@version" and "name".
+func (c *Cache) GetPackage(name, version string) (string, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if version != "" {
+		if v, ok := c.data[name+"@"+version]; ok {
+			return v, true
+		}
+	}
+	v, ok := c.data[name]
+	return v, ok
+}
+
+// Has checks if analysis text for a package exists under "name@version" or "name".
+func (c *Cache) Has(name, version string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if version != "" {
+		if _, ok := c.data[name+"@"+version]; ok {
+			return true
+		}
+	}
+	_, ok := c.data[name]
+	return ok
+}
+
 func (c *Cache) Path() string {
 	return c.path
 }

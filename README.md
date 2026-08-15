@@ -20,7 +20,7 @@
 
 Your system accumulates packages over time. Some you installed months ago and forgot about. Some are 500 MB behemoths you used once. Some you're not even sure what they do anymore.
 
-**Orpheus gives you clarity.** It pulls every explicitly installed package from Pacman, Flatpak, and npm into a single dashboard — then lets an AI tell you what's safe to remove.
+**Orpheus gives you clarity.** It pulls every explicitly installed package from Pacman and Flatpak into a single dashboard — then lets an AI tell you what's safe to remove.
 
 ---
 
@@ -34,7 +34,6 @@ A clean, vim-navigable interface with a **sidebar** for switching managers, a **
 |---------|--------------|-------------------|
 | **Pacman** | All explicitly installed packages (`pacman -Qi`) | `pacman -Rns --noconfirm` (recursive, removes configs) |
 | **Flatpak** | All installed Flatpak applications | Removes app data + cleans unused runtimes |
-| **npm** | Global npm packages with real disk sizes | `npm uninstall -g` |
 
 and many more to come!
 
@@ -178,7 +177,7 @@ orpheus/
     │   ├── package.go       # Package struct + Manager interface
     │   ├── pacman.go        # pacman -Qi parser (state machine)
     │   ├── flatpak.go       # flatpak list parser + cleanup logic
-    │   └── npm.go           # Inline Node.js script for global packages
+    │   └── fuzzy.go         # Fuzzy search and ranking
     │
     └── tui/                 # Terminal UI
         ├── model.go         # Model struct, Init(), tea commands
@@ -194,14 +193,13 @@ orpheus/
 - **Context-aware AI** — The full list of your explicit packages is sent to the AI, so it can infer *why* something exists.
 - **Single-command batch removal** — `pacman -Rns pkg1 pkg2 pkg3` in one `sudo` call, not N separate calls.
 - **Flatpak cleanup** — Uninstalling a Flatpak also deletes its data and removes orphaned runtimes automatically.
-- **No pip** — Modern Arch uses PEP 668 externally-managed environments, making system-wide pip unusable.
+- **No pip or npm** — Removed by design to focus on desktop and OS-level package management.
 
 ---
 
 ## Roadmap
 
 - [x] Pacman provider
-- [x] npm provider
 - [x] Flatpak provider (with `--delete-data` + `--unused` cleanup)
 - [x] AI analysis with Groq/Llama 3.3 70B
 - [x] AI launch commands (`Command: ...`)

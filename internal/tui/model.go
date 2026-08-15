@@ -10,7 +10,6 @@ import (
 	"orpheus/internal/cache"
 	"orpheus/internal/pm"
 
-	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -53,13 +52,12 @@ type Model struct {
 	searching   bool
 	searchInput textinput.Model
 
-	// batch background sync
-	batchActive  bool
-	batchID      uint64
-	batchTotal   int
-	batchCurrent int
-	batchPkg     string
-	progress     progress.Model
+	// background analysis sync
+	syncCancel context.CancelFunc
+	syncChan   chan syncProgressMsg
+	syncTotal  int
+	syncDone   int
+	syncActive bool
 
 	// selected package detail
 	selectedPkg *pm.Package
@@ -135,8 +133,6 @@ func New() Model {
 
 	vp := viewport.New(0, 0)
 
-	prg := progress.New(progress.WithDefaultGradient())
-
 	c, _ := cache.New()
 
 	return Model{
@@ -145,11 +141,10 @@ func New() Model {
 		passwordInput:        pi,
 		installPkgInput:      ii,
 		installPasswordInput: ipi,
-		progress:             prg,
 		detailVP:             vp,
 		loading:              true,
 		selectedPkgs:         make(map[string]bool),
-		managers:             []pm.Manager{pm.NewPacman(), pm.NewFlatpak(), pm.NewNpm()},
+		managers:             []pm.Manager{pm.NewPacman(), pm.NewFlatpak()},
 		activeMgr:            0,
 		aiSvc:                ai.New(),
 		cache:                c,
@@ -182,7 +177,7 @@ func loadPackageDetail(mgr pm.Manager, name string) tea.Cmd {
 func analyzePackage(a *ai.Analyzer, c *cache.Cache, pkg *pm.Package, explicitNames []string) tea.Cmd {
 	return func() tea.Msg {
 		key := pkg.Name + "@" + pkg.Version
-		if text, ok := c.Get(key); ok {
+		if text, ok := c.GetPackage(pkg.Name, pkg.Version); ok {
 			return aiAnalysisMsg{pkgKey: key, text: text}
 		}
 		text, err := a.Analyze(context.Background(), pkg, explicitNames)

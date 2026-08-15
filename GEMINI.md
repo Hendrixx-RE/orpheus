@@ -2,7 +2,7 @@
 
 > **Orpheus** is a terminal-based (TUI) package management dashboard for Arch Linux.
 > It lets users browse, inspect, AI-analyze, and batch-uninstall packages from multiple
-> package managers (Pacman, npm) in a single unified interface.
+> package managers (Pacman, Flatpak) in a single unified interface.
 
 ---
 
@@ -18,7 +18,7 @@
 | Cache | `~/.cache/orpheus/analysis.json` |
 | Binary | `orpheus` (built with `go build`) |
 | Target OS | Linux (Arch-based, uses `pacman`) |
-| Optional Deps | `yay` or `paru` (for AUR search & install support) |
+| Optional Deps | `yay` or `paru` (for AUR search & install support), `flatpak` |
 | Theme | Gruvbox Dark |
 
 ---
@@ -44,7 +44,8 @@ orpheus/
     ├── pm/                  # Package Manager abstraction layer
     │   ├── package.go       # Package struct, Manager interface
     │   ├── pacman.go        # Pacman implementation (pacman -Qi parser)
-    │   └── npm.go           # npm implementation (inline Node.js script)
+    │   ├── flatpak.go       # Flatpak implementation
+    │   └── fuzzy.go         # Fuzzy search and ranking
     │
     └── tui/                 # Terminal UI (Bubble Tea)
         ├── model.go         # Model struct, Init(), tea commands, helpers
@@ -107,10 +108,10 @@ Helper methods: `SizeMB() float64`, `FormatSize() string` (human-readable: B/KiB
 
 | Manager | `Name()` | `ListAll()` | `UninstallCmd()` |
 |---|---|---|---|
-| **Pacman** | `"pacman"` | `pacman -Qi` → full parser, marks base/base-devel as `IsSystem` | `["pacman", "-Rns", "--noconfirm", ...names]` |
-| **Npm** | `"node"` | Inline `node -e` script: reads global `node_modules`, recursively calculates dir sizes | `["npm", "uninstall", "-g", ...names]` |
+| **Pacman** | `"pacman"` | `pacman -Qi` → full parser, marks base/base-devel as `IsSystem` | `["<helper>", "-Rns", "--noconfirm", ...names]` |
+| **Flatpak** | `"flatpak"` | `flatpak list --app --columns=...` | `["sh", "-c", "dbus-run-session flatpak uninstall -y --delete-data ... && dbus-run-session flatpak uninstall -y --unused"]` |
 
-#### Pacman Parser Details (`pacman.go` — 238 lines)
+#### Pacman Parser Details (`pacman.go` — 376 lines)
 
 - `parsePacmanQi(data)`: State machine parser for `pacman -Qi` output. Handles multi-line
   field continuation (lines starting with space/tab). Uses `finalize()` closure to accumulate packages.
@@ -118,17 +119,16 @@ Helper methods: `SizeMB() float64`, `FormatSize() string` (human-readable: B/KiB
 - `parseOptDepLine()`: Extracts dep name from lines like `"python: Python support [installed]"`.
 - `parseSize()`: Handles GiB, MiB, KiB, and raw bytes.
 - `parseDate()`: Tries 3 date formats common in pacman output.
-- `GetOrphansDetailed()`: Standalone exported function (not on Pacman receiver). Runs `pacman -Qdti`.
+- `GetOrphans()`: Runs `pacman -Qtdq`.
+- `UninstallOrphansCmd()`: Runs `pacman -Rns --noconfirm $orphans`.
 - `runCmd()` / `runCmdAllowExit1()`: Shared command execution helpers.
 
 > **Design Decision — Pacman**: Only **explicitly installed** packages are shown. Filtering
 > happens in `applyFilter()` in `model.go` which checks `InstallReason == "Explicitly installed"`.
 
-> **Design Decision — npm**: Size is calculated by recursively walking each package's directory
-> under the global `node_modules` root, since `npm list` doesn't report sizes natively.
+> **Design Decision — Flatpak**: Applications are listed with sizes parsed from columns, and uninstalls automatically remove user app data and cleanup unused runtimes.
 
-> **Removed — Pip**: Was previously implemented but removed because pip cannot install packages
-> system-wide on modern Arch (PEP 668 externally-managed). The file no longer exists.
+> **Removed — Pip & npm**: Both removed by design. Modern Arch/PEP 668 prevents system-wide pip installs, and npm global packages do not represent OS desktop packages.
 
 ### 3. AI Analysis (`internal/ai/analyzer.go` — 174 lines)
 
@@ -368,7 +368,7 @@ go run .
 Requires:
 - Go 1.26+
 - `pacman` (Arch Linux)
-- `node` + `npm` (for npm package listing)
+- `flatpak` (optional, for Flatpak package management)
 - `GROQ_API_KEY` in `.env` file (for AI analysis)
 
 ---

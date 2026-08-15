@@ -340,6 +340,10 @@ func (m Model) renderDetailPanel() string {
 		content = m.renderDetailEmpty()
 	} else if m.selectedPkg == nil && len(m.selectedPkgs) <= 1 {
 		content = m.renderDetailEmpty()
+	} else if m.askingPassword || m.removingLoading || m.removeErr != "" {
+		// Render the action view (password/spinner/error) directly in the
+		// panel instead of the viewport so it never overflows.
+		content = m.renderActionView(w)
 	} else {
 		content = m.detailVP.View()
 	}
@@ -349,6 +353,40 @@ func (m Model) renderDetailPanel() string {
 		st = stylePanelFocused
 	}
 	return st.Width(w).Height(h).Padding(0, 2).Render(content)
+}
+
+// renderActionView builds the full detail-panel content shown during
+// password prompt, removal spinner, or removal error states.
+func (m Model) renderActionView(w int) string {
+	divider := styleDivider.Render(strings.Repeat("─", w-6))
+	var sb strings.Builder
+
+	// Show package / batch title
+	if len(m.selectedPkgs) > 1 {
+		sb.WriteString(styleTitle.Render("Batch Operation") + "\n")
+	} else if m.selectedPkg != nil {
+		sb.WriteString(styleTitle.Render(m.selectedPkg.Name) + "  " + styleDimmed.Render(m.selectedPkg.Version) + "\n")
+	}
+	sb.WriteString(divider + "\n\n")
+
+	// Action state
+	if m.askingPassword {
+		if len(m.selectedPkgs) > 1 {
+			names := m.getSelectedNames()
+			sb.WriteString(styleOrphan.Render(fmt.Sprintf("Remove %d Packages", len(names))) + "\n\n")
+		}
+		sb.WriteString(styleAILabel.Render("sudo password") + "\n")
+		sb.WriteString(m.passwordInput.View() + "\n\n")
+		sb.WriteString(styleDimmed.Render("Enter to confirm  Esc to cancel") + "\n")
+	} else if m.removingLoading {
+		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Removing package...") + "\n")
+	} else if m.removeErr != "" {
+		sb.WriteString(styleOrphan.Render("Removal failed:") + "\n")
+		sb.WriteString(styleOrphan.Render(wrapText(m.removeErr, w-8)) + "\n\n")
+		sb.WriteString(styleDimmed.Render("Press x to retry") + "\n")
+	}
+
+	return sb.String()
 }
 
 func (m Model) renderDetailEmpty() string {
@@ -387,7 +425,32 @@ func (m Model) renderStatusBar() string {
 		}
 	}
 
-	bar := styleStatusBar.Render(strings.Join(hints, "  "))
+	left := strings.Join(hints, "  ")
+
+	var syncIndicator string
+	if m.syncTotal > 0 {
+		if m.syncActive {
+			syncIndicator = styleAILabel.Render(fmt.Sprintf("[AI %d/%d]", m.syncDone, m.syncTotal))
+		} else if m.syncDone == m.syncTotal {
+			syncIndicator = styleVerdict.Render("[AI 100%]")
+		} else {
+			syncIndicator = styleDimmed.Render(fmt.Sprintf("[AI %d/%d]", m.syncDone, m.syncTotal))
+		}
+	}
+
+	if syncIndicator != "" {
+		totalW := m.width - 4
+		leftW := lipgloss.Width(left)
+		rightW := lipgloss.Width(syncIndicator)
+		spaceW := totalW - leftW - rightW
+		if spaceW > 2 {
+			bar := styleStatusBar.Render(left) + strings.Repeat(" ", spaceW) + syncIndicator
+			return "  " + bar
+		}
+		left = left + "  " + syncIndicator
+	}
+
+	bar := styleStatusBar.Render(left)
 	return "  " + bar
 }
 

@@ -82,7 +82,9 @@ type Analyzer struct {
 	client           *http.Client
 	sf               singleflightGroup
 	mu               sync.Mutex
+	lastReqTime      time.Time
 	rateLimitedUntil time.Time
+	minInterval      time.Duration
 }
 
 func New() *Analyzer {
@@ -97,15 +99,9 @@ func New() *Analyzer {
 	}
 
 	model := os.Getenv("ORPHEUS_MODEL")
-	
+
+	var defaultInterval time.Duration
 	switch a.provider {
-	case OpenAI:
-		a.endpoint = openAIEndpoint
-		a.apiKey = os.Getenv("OPENAI_API_KEY")
-		a.model = model
-		if a.model == "" {
-			a.model = defaultOpenAIModel
-		}
 	case Gemini:
 		a.endpoint = geminiEndpoint
 		a.apiKey = os.Getenv("GEMINI_API_KEY")
@@ -113,6 +109,15 @@ func New() *Analyzer {
 		if a.model == "" {
 			a.model = defaultGeminiModel
 		}
+		defaultInterval = 4500 * time.Millisecond // 15 RPM
+	case OpenAI:
+		a.endpoint = openAIEndpoint
+		a.apiKey = os.Getenv("OPENAI_API_KEY")
+		a.model = model
+		if a.model == "" {
+			a.model = defaultOpenAIModel
+		}
+		defaultInterval = 2500 * time.Millisecond
 	case Anthropic:
 		a.endpoint = anthropicEndpoint
 		a.apiKey = os.Getenv("ANTHROPIC_API_KEY")
@@ -120,6 +125,7 @@ func New() *Analyzer {
 		if a.model == "" {
 			a.model = defaultAnthropicModel
 		}
+		defaultInterval = 2500 * time.Millisecond
 	default:
 		a.provider = Groq
 		a.endpoint = groqEndpoint
@@ -128,9 +134,22 @@ func New() *Analyzer {
 		if a.model == "" {
 			a.model = defaultGroqModel
 		}
+		defaultInterval = 2500 * time.Millisecond // 30 RPM
 	}
 
+	if delayEnv := os.Getenv("ORPHEUS_RATE_LIMIT_DELAY"); delayEnv != "" {
+		if d, err := time.ParseDuration(delayEnv); err == nil && d > 0 {
+			defaultInterval = d
+		}
+	}
+	a.minInterval = defaultInterval
+
 	return a
+}
+
+// MinInterval returns the configured pacing interval between LLM calls.
+func (a *Analyzer) MinInterval() time.Duration {
+	return a.minInterval
 }
 
 func (a *Analyzer) Analyze(ctx context.Context, pkg *pm.Package, explicitNames []string) (string, error) {
@@ -138,24 +157,55 @@ func (a *Analyzer) Analyze(ctx context.Context, pkg *pm.Package, explicitNames [
 		return "", fmt.Errorf("%s API key not set in .env", strings.ToUpper(string(a.provider)))
 	}
 
-	a.mu.Lock()
-	if time.Now().Before(a.rateLimitedUntil) {
-		remaining := time.Until(a.rateLimitedUntil).Round(time.Second)
-		a.mu.Unlock()
-		return "", fmt.Errorf("rate limited: cooling down for %s", remaining)
-	}
-	a.mu.Unlock()
-
 	key := pkg.Name + "@" + pkg.Version
 	return a.sf.Do(key, func() (string, error) {
-		res, err := a.analyzeUncached(ctx, pkg, explicitNames)
-		if err != nil && strings.Contains(err.Error(), "rate limited") {
-			a.mu.Lock()
-			a.rateLimitedUntil = time.Now().Add(30 * time.Second)
-			a.mu.Unlock()
+		// Wait for rate limit / safe delay before making the call
+		if err := a.waitRateLimit(ctx); err != nil {
+			return "", err
 		}
+
+		res, err := a.analyzeUncached(ctx, pkg, explicitNames)
+
+		a.mu.Lock()
+		a.lastReqTime = time.Now()
+		if err != nil && strings.Contains(err.Error(), "rate limited") {
+			a.rateLimitedUntil = time.Now().Add(30 * time.Second)
+		}
+		a.mu.Unlock()
+
 		return res, err
 	})
+}
+
+// waitRateLimit enforces interval pacing and pauses during active 429 cooldowns.
+// It is context-aware and cancels immediately if ctx is cancelled.
+func (a *Analyzer) waitRateLimit(ctx context.Context) error {
+	for {
+		a.mu.Lock()
+		now := time.Now()
+		var waitDur time.Duration
+
+		if now.Before(a.rateLimitedUntil) {
+			waitDur = a.rateLimitedUntil.Sub(now)
+		} else if !a.lastReqTime.IsZero() {
+			elapsed := now.Sub(a.lastReqTime)
+			if elapsed < a.minInterval {
+				waitDur = a.minInterval - elapsed
+			}
+		}
+		a.mu.Unlock()
+
+		if waitDur <= 0 {
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(waitDur):
+		}
+	}
+	return nil
 }
 
 func (a *Analyzer) analyzeUncached(ctx context.Context, pkg *pm.Package, explicitNames []string) (string, error) {

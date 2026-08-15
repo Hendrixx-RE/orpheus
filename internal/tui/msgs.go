@@ -33,20 +33,12 @@ type pkgSearchResultMsg struct {
 	err     error
 }
 
-// BatchProgressMsg is sent by your background goroutine to update the UI
-type BatchProgressMsg struct {
-	BatchID uint64
+// syncProgressMsg is sent by the background sync worker to update the UI status
+type syncProgressMsg struct {
 	Total   int
-	Current int
+	Done    int
 	PkgName string
-	Done    bool
-}
-
-type processNextBatchPkgMsg struct {
-	BatchID       uint64
-	MissingPkgs   []pm.Package
-	CurrentIdx    int
-	ExplicitNames []string
+	DoneAll bool
 }
 
 // aiSearchResultMsg is sent when your ripgrep logic finishes

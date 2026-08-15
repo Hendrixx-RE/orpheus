@@ -34,7 +34,7 @@ type Manager interface {
 	InstallCmd(name string) []string
 	Search(query string) ([]Package, error)
 	// RequiresSudo reports whether install/uninstall commands must be run
-	// through sudo. Pacman always does; Flatpak and npm manage their own
+	// through sudo. Pacman always does; Flatpak manages its own
 	// privilege escalation and must NOT be wrapped in sudo.
 	RequiresSudo() bool
 }

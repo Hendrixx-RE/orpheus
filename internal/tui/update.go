@@ -5,12 +5,11 @@ import (
 	"os/exec"
 	"strings"
 	"context"
-	"time"
 
-	"orpheus/internal/pm"
+	"orpheus/internal/ai"
 	"orpheus/internal/cache"
+	"orpheus/internal/pm"
 
-	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -40,69 +39,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 
-	case BatchProgressMsg:
-		if msg.BatchID != m.batchID {
-			return m, nil
+	case syncProgressMsg:
+		m.syncTotal = msg.Total
+		m.syncDone = msg.Done
+		m.syncActive = !msg.DoneAll
+		if !msg.DoneAll && m.syncChan != nil {
+			return m, waitForSyncProgress(m.syncChan)
 		}
-		m.batchActive = !msg.Done
-		m.batchTotal = msg.Total
-		m.batchCurrent = msg.Current
-		m.batchPkg = msg.PkgName
-		var cmd tea.Cmd
-		if m.batchTotal > 0 {
-			percent := float64(m.batchCurrent) / float64(m.batchTotal)
-			cmd = m.progress.SetPercent(percent)
-		}
-		return m, cmd
-
-	case progress.FrameMsg:
-		progressModel, cmd := m.progress.Update(msg)
-		m.progress = progressModel.(progress.Model)
-		return m, cmd
-
-	case processNextBatchPkgMsg:
-		if msg.BatchID != m.batchID {
-			return m, nil
-		}
-		if msg.CurrentIdx >= len(msg.MissingPkgs) {
-			return m, func() tea.Msg { return BatchProgressMsg{BatchID: msg.BatchID, Done: true} }
-		}
-
-		pkg := msg.MissingPkgs[msg.CurrentIdx]
-
-		progressCmd := func() tea.Msg {
-			return BatchProgressMsg{
-				BatchID: msg.BatchID,
-				Total:   len(msg.MissingPkgs),
-				Current: msg.CurrentIdx,
-				PkgName: pkg.Name,
-			}
-		}
-
-		analyzeCmd := func() tea.Msg {
-			key := pkg.Name + "@" + pkg.Version
-			// Re-check cache right before making the call — a parallel run may have
-			// already populated this entry between when the batch was built and now.
-			if _, ok := m.cache.Get(key); !ok {
-				text, err := m.aiSvc.Analyze(context.Background(), &pkg, msg.ExplicitNames)
-				if err == nil {
-					m.cache.Set(key, text)
-					time.Sleep(2500 * time.Millisecond) // 2.5s pacing (24 RPM) to respect API rate limits
-				} else {
-					// On rate limit or error, pause background batch for 10s before attempting next item
-					time.Sleep(10 * time.Second)
-				}
-			}
-
-			return processNextBatchPkgMsg{
-				BatchID:       msg.BatchID,
-				MissingPkgs:   msg.MissingPkgs,
-				CurrentIdx:    msg.CurrentIdx + 1,
-				ExplicitNames: msg.ExplicitNames,
-			}
-		}
-
-		return m, tea.Sequence(progressCmd, analyzeCmd)
+		return m, nil
 
 	case aiSearchResultMsg:
 		if msg.Err != nil {
@@ -139,11 +83,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.filteredPkgs = msg.pkgs
 		m.applyFilter()
 
-		// Advance batchID so any previous batch loop stops processing,
-		// and start a fresh batch analysis for current manager's packages.
-		m.batchID++
-		m.batchActive = true
-		return m, triggerBatchAnalysis(m.batchID, m.cache, m.allPkgs)
+		// Cancel any running background sync and start a new worker for current manager
+		if m.syncCancel != nil {
+			m.syncCancel()
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		m.syncCancel = cancel
+		m.syncChan = make(chan syncProgressMsg, 16)
+		m.syncActive = true
+
+		go runSyncWorker(ctx, m.aiSvc, m.cache, m.allPkgs, m.syncChan)
+		return m, waitForSyncProgress(m.syncChan)
 
 	case pkgDetailMsg:
 		if msg.err == nil && msg.pkg != nil {
@@ -297,6 +247,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					} else {
 						m.detailVP.SetContent(m.buildDetailContent())
 					}
+					m.detailVP.GotoTop()
 				}
 				return m, cmd
 			}
@@ -399,6 +350,7 @@ func (m Model) startRemoval() (Model, tea.Cmd) {
 	}
 
 	m.removeErr = ""
+	m.focusedPanel = panelDetail
 
 	// Ensure selectedPkg is updated if targeting a single package from list cursor
 	if len(targets) == 1 {
@@ -423,11 +375,12 @@ func (m Model) startRemoval() (Model, tea.Cmd) {
 		} else {
 			m.detailVP.SetContent(m.buildDetailContent())
 		}
+		m.detailVP.GotoTop()
 		m.lastKey = ""
 		return m, nil
 	}
 
-	// Flatpak / npm: run directly, no password needed
+	// Flatpak: run directly, no password needed
 	m.removingLoading = true
 	cmdArgs := m.managers[m.activeMgr].UninstallCmd(targets)
 	if len(targets) > 1 {
@@ -661,10 +614,10 @@ func (m *Model) autoAnalyze() tea.Cmd {
 	if m.selectedPkg == nil {
 		return nil
 	}
-	key := m.selectedPkg.Name + "@" + m.selectedPkg.Version
-	if text, ok := m.cache.Get(key); ok {
+	if text, ok := m.cache.GetPackage(m.selectedPkg.Name, m.selectedPkg.Version); ok {
 		m.aiText = text
 		m.aiLoading = false
+		m.aiErr = ""
 		return nil
 	}
 	// Not cached yet — fire background analysis
@@ -695,6 +648,7 @@ func (m Model) buildDetailContent() string {
 	sb.WriteString(styleTitle.Render(p.Name) + "  " + styleDimmed.Render(p.Version) + "\n")
 	sb.WriteString(styleDivider.Render(strings.Repeat("─", m.detailWidth()-6)) + "\n\n")
 
+
 	if p.Description != "" {
 		sb.WriteString(styleDimmed.Render(wrapText(p.Description, m.detailWidth()-8)) + "\n\n")
 	}
@@ -724,15 +678,6 @@ func (m Model) buildDetailContent() string {
 	sb.WriteString(styleDivider.Render(strings.Repeat("─", m.detailWidth()-6)) + "\n\n")
 
 	switch {
-	case m.askingPassword:
-		sb.WriteString(styleVal.Render("Enter sudo password to remove "+p.Name+":") + "\n")
-		sb.WriteString(m.passwordInput.View() + "\n")
-		sb.WriteString(styleDimmed.Render("(Press Esc to cancel)") + "\n")
-	case m.removingLoading:
-		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Removing package...") + "\n")
-	case m.removeErr != "":
-		sb.WriteString(styleOrphan.Render("Removal failed: "+m.removeErr) + "\n")
-		sb.WriteString(styleDimmed.Render("Press x to retry") + "\n")
 	case m.aiLoading:
 		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Analyzing...") + "\n")
 	case m.aiErr != "":
@@ -763,6 +708,7 @@ func (m Model) buildBatchDetailContent() string {
 	sb.WriteString(styleTitle.Render("Batch Operation") + "\n")
 	sb.WriteString(styleDivider.Render(strings.Repeat("─", m.detailWidth()-6)) + "\n\n")
 
+
 	sb.WriteString(styleVal.Render(fmt.Sprintf("%d packages selected", count)) + "\n\n")
 
 	// list first few names
@@ -779,15 +725,11 @@ func (m Model) buildBatchDetailContent() string {
 	sb.WriteString(styleDivider.Render(strings.Repeat("─", m.detailWidth()-6)) + "\n\n")
 
 	switch {
-	case m.askingPassword:
-		sb.WriteString(styleVal.Render(fmt.Sprintf("Enter sudo password to remove %d packages:", count)) + "\n")
-		sb.WriteString(m.passwordInput.View() + "\n")
-		sb.WriteString(styleDimmed.Render("(Press Esc to cancel)") + "\n")
-	case m.removingLoading:
-		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Removing packages...") + "\n")
-	case m.removeErr != "":
-		sb.WriteString(styleOrphan.Render("Removal failed: "+m.removeErr) + "\n")
-		sb.WriteString(styleDimmed.Render("Press x to retry") + "\n")
+	case m.aiLoading:
+		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Analyzing...") + "\n")
+	case m.aiErr != "":
+		sb.WriteString(styleOrphan.Render(m.aiErr) + "\n")
+		sb.WriteString(styleDimmed.Render("Press a to retry") + "\n")
 	default:
 		sb.WriteString(styleDimmed.Render("Press x to remove all selected packages") + "\n")
 	}
@@ -916,7 +858,7 @@ func (m Model) handleInstallModalKey(key string, msg tea.KeyMsg) (Model, tea.Cmd
 				m.installPasswordInput.Focus()
 				m.installPasswordInput.SetValue("")
 			} else {
-				// Flatpak / npm — run directly, no password needed
+				// Flatpak — run directly, no password needed
 				m.installingLoading = true
 				m.installErr = ""
 				cmdArgs := m.managers[m.activeMgr].InstallCmd(m.installPkgName)
@@ -962,7 +904,7 @@ func (m Model) handleInstallModalKey(key string, msg tea.KeyMsg) (Model, tea.Cmd
 				m.installPasswordInput.Focus()
 				m.installPasswordInput.SetValue("")
 			} else {
-				// Flatpak / npm — run directly, no password needed
+				// Flatpak — run directly, no password needed
 				m.installingLoading = true
 				m.installErr = ""
 				cmdArgs := m.managers[m.activeMgr].InstallCmd(m.installPkgName)
@@ -1043,7 +985,7 @@ func installPackageCmdAsync(cmdArgs []string, password string, needsSudo bool) t
 			c = exec.Command("sudo", args...)
 			c.Stdin = strings.NewReader(password + "\n")
 		} else {
-			// Flatpak and npm handle their own permissions — never wrap in sudo
+			// Flatpak handles its own permissions — never wrap in sudo
 			c = exec.Command(cmdArgs[0], cmdArgs[1:]...)
 		}
 		out, err := c.CombinedOutput()
@@ -1146,7 +1088,7 @@ func removePackageCmdAsync(cmdArgs []string, password string, needsSudo bool) te
 			c = exec.Command("sudo", args...)
 			c.Stdin = strings.NewReader(password + "\n")
 		} else {
-			// Flatpak and npm handle their own permissions
+			// Flatpak handles its own permissions
 			c = exec.Command(cmdArgs[0], cmdArgs[1:]...)
 		}
 		out, err := c.CombinedOutput()
@@ -1157,30 +1099,66 @@ func removePackageCmdAsync(cmdArgs []string, password string, needsSudo bool) te
 	}
 }
 
-func triggerBatchAnalysis(batchID uint64, c *cache.Cache, pkgs []pm.Package) tea.Cmd {
+func waitForSyncProgress(ch <-chan syncProgressMsg) tea.Cmd {
 	return func() tea.Msg {
-		var missing []pm.Package
-		var explicitNames []string
+		msg, ok := <-ch
+		if !ok {
+			return syncProgressMsg{DoneAll: true}
+		}
+		return msg
+	}
+}
 
-		for _, p := range pkgs {
-			if p.InstallReason == "Explicitly installed" {
-				explicitNames = append(explicitNames, p.Name)
-				key := p.Name + "@" + p.Version
-				if _, ok := c.Get(key); !ok {
-					missing = append(missing, p)
-				}
-			}
+func runSyncWorker(ctx context.Context, aiSvc *ai.Analyzer, c *cache.Cache, pkgs []pm.Package, ch chan<- syncProgressMsg) {
+	defer close(ch)
+
+	var explicitPkgs []pm.Package
+	var explicitNames []string
+
+	for _, p := range pkgs {
+		if p.InstallReason == "Explicitly installed" {
+			explicitPkgs = append(explicitPkgs, p)
+			explicitNames = append(explicitNames, p.Name)
+		}
+	}
+
+	total := len(explicitPkgs)
+	if total == 0 {
+		ch <- syncProgressMsg{Total: 0, Done: 0, DoneAll: true}
+		return
+	}
+
+	doneCount := 0
+	for _, p := range explicitPkgs {
+		if c.Has(p.Name, p.Version) {
+			doneCount++
+		}
+	}
+
+	ch <- syncProgressMsg{Total: total, Done: doneCount, DoneAll: doneCount == total}
+
+	if doneCount == total {
+		return
+	}
+
+	for _, pkg := range explicitPkgs {
+		select {
+		case <-ctx.Done():
+			return
+		default:
 		}
 
-		if len(missing) == 0 {
-			return BatchProgressMsg{BatchID: batchID, Done: true}
+		// Re-check cache before fetching
+		if c.Has(pkg.Name, pkg.Version) {
+			continue
 		}
 
-		return processNextBatchPkgMsg{
-			BatchID:       batchID,
-			MissingPkgs:   missing,
-			CurrentIdx:    0,
-			ExplicitNames: explicitNames,
+		text, err := aiSvc.Analyze(ctx, &pkg, explicitNames)
+		if err == nil {
+			key := pkg.Name + "@" + pkg.Version
+			c.Set(key, text)
+			doneCount++
+			ch <- syncProgressMsg{Total: total, Done: doneCount, PkgName: pkg.Name, DoneAll: doneCount == total}
 		}
 	}
 }
