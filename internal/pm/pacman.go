@@ -26,23 +26,26 @@ func getPacmanHelper() string {
 }
 
 func (p *Pacman) RequiresSudo() bool {
-	// yay and paru build AUR packages as unprivileged user and escalate via sudo internally.
-	// Running yay/paru directly under sudo breaks makepkg.
-	if helper := getPacmanHelper(); helper == "yay" || helper == "paru" {
-		return false
-	}
 	return true
 }
 
 func (p *Pacman) UninstallCmd(names []string) []string {
-	helper := getPacmanHelper()
-	args := []string{helper, "-Rns", "--noconfirm"}
-	return append(args, names...)
+	return append([]string{"pacman", "-Rns", "--noconfirm"}, names...)
 }
 
 func (p *Pacman) InstallCmd(name string) []string {
 	helper := getPacmanHelper()
 	return []string{helper, "-S", "--noconfirm", name}
+}
+
+func (p *Pacman) UpdateCmd() []string {
+	helper := getPacmanHelper()
+	return []string{helper, "-Syu", "--noconfirm"}
+}
+
+func (p *Pacman) UpdatePackagesCmd(names []string) []string {
+	helper := getPacmanHelper()
+	return append([]string{helper, "-S", "--noconfirm"}, names...)
 }
 
 func (p *Pacman) Search(query string) ([]Package, error) {
@@ -101,7 +104,6 @@ func parsePacmanSs(data []byte) []Package {
 	lines := strings.Split(string(data), "\n")
 	var pkgs []Package
 	var cur *Package
-	var curRepo string
 
 	for _, line := range lines {
 		if line == "" {
@@ -111,13 +113,9 @@ func parsePacmanSs(data []byte) []Package {
 			// Description continuation
 			if cur != nil {
 				desc := strings.TrimSpace(line)
-				if curRepo != "" {
-					desc = "[" + curRepo + "] " + desc
-				}
 				cur.Description = desc
 				pkgs = append(pkgs, *cur)
 				cur = nil
-				curRepo = ""
 			}
 		} else {
 			// Package line: "repo/name version [installed] ..."
@@ -131,10 +129,12 @@ func parsePacmanSs(data []byte) []Package {
 				repo = namePart[:idx]
 				namePart = namePart[idx+1:]
 			}
-			curRepo = repo
+			isInstalled := strings.Contains(strings.ToLower(line), "installed")
 			cur = &Package{
-				Name:    namePart,
-				Version: parts[1],
+				Name:        namePart,
+				Version:     parts[1],
+				Repository:  repo,
+				IsInstalled: isInstalled,
 			}
 		}
 	}

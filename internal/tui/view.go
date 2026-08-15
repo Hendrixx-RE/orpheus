@@ -31,7 +31,86 @@ func (m Model) View() string {
 		return m.renderInstallModal()
 	}
 
+	if m.updatingModal {
+		return m.renderUpdateModal()
+	}
+
 	return mainView
+}
+
+func (m Model) renderUpdateModal() string {
+	mgrName := m.managers[m.activeMgr].Name()
+	mgrTitle := strings.ToUpper(mgrName[:1]) + mgrName[1:]
+	if mgrName == "pacman" {
+		mgrTitle = "Pacman / AUR"
+	}
+
+	const modalW = 76              // outer modal width
+	const innerW = modalW - 8 - 2 // minus padding(3*2) and borders(1*2) = 66
+
+	var sb strings.Builder
+	title := "Update Packages"
+	if len(m.updateTargets) > 0 {
+		title = fmt.Sprintf("Update %d Package(s)", len(m.updateTargets))
+	} else {
+		title = "System Upgrade — " + mgrTitle
+	}
+	sb.WriteString(styleTitle.Render(title) + "\n")
+	sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n\n")
+
+	switch {
+	// Phase: password input
+	case m.updateAskPassword:
+		if len(m.updateTargets) > 0 {
+			sb.WriteString(styleVal.Render(fmt.Sprintf("Ready to update %d package(s) via %s.", len(m.updateTargets), mgrTitle)) + "\n\n")
+		} else {
+			sb.WriteString(styleVal.Render(fmt.Sprintf("Ready to upgrade all system packages via %s.", mgrTitle)) + "\n\n")
+		}
+		sb.WriteString(styleAILabel.Render("sudo password") + "\n")
+		sb.WriteString(m.updatePasswordInput.View() + "\n\n")
+		sb.WriteString(styleDimmed.Render("Enter to start update  |  Esc to cancel"))
+
+	// Phase: updating in progress
+	case m.updatingLoading:
+		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Updating packages via "+mgrTitle+"...") + "\n\n")
+		sb.WriteString(styleDimmed.Render("Please wait, resolving dependencies and applying updates..."))
+
+	// Phase: update error
+	case m.updateErr != "":
+		sb.WriteString(styleOrphan.Render("Update failed:") + "\n")
+		if m.updateOutput != "" {
+			sb.WriteString(styleVal.Render(truncate(m.updateErr, innerW)) + "\n\n")
+			sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n")
+			sb.WriteString(m.updateOutputVP.View() + "\n")
+			sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n\n")
+		} else {
+			sb.WriteString(styleOrphan.Render(wrapText(m.updateErr, innerW)) + "\n\n")
+		}
+		sb.WriteString(styleDimmed.Render("j/k scroll log  |  Enter/Esc to close and reload"))
+
+	// Phase: update complete (done)
+	case m.updateDone:
+		sb.WriteString(styleVerdict.Render("✓ Update complete!") + "\n\n")
+		if m.updateOutput != "" {
+			sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n")
+			sb.WriteString(m.updateOutputVP.View() + "\n")
+			sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n\n")
+		}
+		sb.WriteString(styleDimmed.Render("j/k scroll log  |  Enter/Esc to close and reload"))
+
+	default:
+		sb.WriteString(styleDimmed.Render("Ready to update.") + "\n\n")
+		sb.WriteString(styleDimmed.Render("Enter to confirm  |  Esc to close"))
+	}
+
+	modalBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorCyan).
+		Padding(1, 3).
+		Width(modalW).
+		Render(sb.String())
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modalBox)
 }
 
 func (m Model) renderOrphanModal() string {
@@ -77,15 +156,38 @@ func (m Model) renderOrphanModal() string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modalBox)
 }
 
-func (m Model) renderInstallModal() string {
-	mgrName := m.managers[m.activeMgr].Name()
-	mgrTitle := strings.ToUpper(mgrName[:1]) + mgrName[1:]
+func renderRepoTag(repo string) string {
+	switch strings.ToLower(repo) {
+	case "aur":
+		return lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("[aur]")
+	case "flathub":
+		return lipgloss.NewStyle().Foreground(colorPurple).Bold(true).Render("[flathub]")
+	case "core", "extra", "multilib":
+		return lipgloss.NewStyle().Foreground(colorCyan).Bold(true).Render("[" + repo + "]")
+	default:
+		if repo == "" {
+			return ""
+		}
+		return styleDimmed.Render("[" + repo + "]")
+	}
+}
 
-	const modalW = 70              // outer modal width
-	const innerW = modalW - 8 - 2 // minus padding(3*2) and borders(1*2) = 60
+func (m Model) renderInstallModal() string {
+	mgrIdx := m.installMgrIndex
+	if mgrIdx < 0 || mgrIdx >= len(m.managers) {
+		mgrIdx = m.activeMgr
+	}
+	mgrName := m.managers[mgrIdx].Name()
+	mgrTitle := strings.ToUpper(mgrName[:1]) + mgrName[1:]
+	if mgrName == "pacman" {
+		mgrTitle = "Pacman / AUR"
+	}
+
+	const modalW = 76              // outer modal width
+	const innerW = modalW - 8 - 2 // minus padding(3*2) and borders(1*2) = 66
 
 	var sb strings.Builder
-	sb.WriteString(styleTitle.Render("Install Package — "+mgrTitle) + "\n")
+	sb.WriteString(styleTitle.Render("Install Package") + styleDimmed.Render(" — ") + styleAILabel.Render(mgrTitle) + "\n")
 	sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n\n")
 
 	switch {
@@ -93,25 +195,43 @@ func (m Model) renderInstallModal() string {
 	// ── Phase: installing ────────────────────────────────────────────────
 	case m.installingLoading:
 		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Installing "+m.installPkgName+"...") + "\n\n")
-		sb.WriteString(styleDimmed.Render("Please wait..."))
+		sb.WriteString(styleDimmed.Render("Please wait, resolving dependencies and installing..."))
 
 	// ── Phase: install error ─────────────────────────────────────────────
 	case m.installErr != "":
 		sb.WriteString(styleOrphan.Render("Install failed:") + "\n")
-		sb.WriteString(styleOrphan.Render(truncate(m.installErr, innerW)) + "\n\n")
-		sb.WriteString(styleDimmed.Render("Enter to search again  Esc to close"))
+		if m.installOutput != "" {
+			sb.WriteString(styleVal.Render(truncate(m.installErr, innerW)) + "\n\n")
+			sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n")
+			sb.WriteString(m.installOutputVP.View() + "\n")
+			sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n\n")
+		} else {
+			sb.WriteString(styleOrphan.Render(wrapText(m.installErr, innerW)) + "\n\n")
+		}
+		sb.WriteString(styleDimmed.Render("Enter to search again  |  Esc to close"))
 
 	// ── Phase: password ──────────────────────────────────────────────────
 	case m.installAskPassword:
 		sb.WriteString(styleVal.Render("Package:  ") + styleTitle.Render(m.installPkgName) + "\n\n")
 		sb.WriteString(styleAILabel.Render("sudo password") + "\n")
 		sb.WriteString(m.installPasswordInput.View() + "\n\n")
-		sb.WriteString(styleDimmed.Render("Enter to install  Esc to go back"))
+		sb.WriteString(styleDimmed.Render("Enter to confirm install  |  Esc to go back"))
 
-	// ── Phase: package description popup ────────────────────────────────
+	// ── Phase: package preview & AI analysis ─────────────────────────────
 	case m.installShowDesc && len(m.installResults) > 0:
 		pkg := m.installResults[m.installResultsCursor]
-		sb.WriteString(styleTitle.Render(pkg.Name) + "  " + styleDimmed.Render(pkg.Version) + "\n")
+		tag := renderRepoTag(pkg.Repository)
+		instBadge := ""
+		if pkg.IsInstalled {
+			instBadge = "  " + styleVerdict.Render("[installed]")
+		}
+
+		titleLine := styleTitle.Render(pkg.Name) + "  " + styleDimmed.Render(pkg.Version)
+		if tag != "" {
+			titleLine += "  " + tag
+		}
+		titleLine += instBadge
+		sb.WriteString(titleLine + "\n")
 		sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n\n")
 
 		desc := pkg.Description
@@ -120,14 +240,30 @@ func (m Model) renderInstallModal() string {
 		}
 		sb.WriteString(styleVal.Render(wrapText(desc, innerW)) + "\n\n")
 
-		sb.WriteString(styleDimmed.Render("Tab/Esc back to list  Enter select & install"))
+		sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n")
+		sb.WriteString(styleAILabel.Render("AI Short Description") + "\n")
+		sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n\n")
+
+		switch {
+		case m.installAILoading:
+			sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Fetching short description...") + "\n\n")
+		case m.installAIErr != "":
+			sb.WriteString(styleOrphan.Render(m.installAIErr) + "\n")
+			sb.WriteString(styleDimmed.Render("Press a to retry") + "\n\n")
+		case m.installAIAnalysis != "":
+			sb.WriteString(styleVal.Render(wrapText(strings.TrimSpace(m.installAIAnalysis), innerW)) + "\n\n")
+		default:
+			sb.WriteString(styleDimmed.Render("Press ") + styleKey.Render("a") + styleDimmed.Render(" for an AI short description.") + "\n\n")
+		}
+
+		sb.WriteString(styleDimmed.Render("Tab/Esc back to list  |  ") + styleKey.Render("a") + styleDimmed.Render(" AI summary  |  Enter install"))
 
 	// ── Phase: results list ──────────────────────────────────────────────
 	case len(m.installResults) > 0:
 		count := len(m.installResults)
 		query := truncate(m.installPkgInput.Value(), 24)
 		sb.WriteString(styleAILabel.Render(fmt.Sprintf("%d results", count)) +
-			styleDimmed.Render("  for: "+query) + "\n")
+			styleDimmed.Render(" for \""+query+"\" in "+mgrTitle) + "\n")
 		sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n")
 
 		const listH = 8
@@ -138,22 +274,49 @@ func (m Model) renderInstallModal() string {
 			pkg := m.installResults[i]
 			hovered := i == m.installResultsCursor
 
-			// Layout: name(24) + " " + version(10) + "  " + desc(rest)
-			const nameW, verW = 24, 10
-			descW := innerW - nameW - verW - 3 // 3 for separating spaces
-			name := padRight(truncate(pkg.Name, nameW), nameW)
-			ver := padRight(truncate(pkg.Version, verW), verW)
-			desc := truncate(pkg.Description, descW)
-			content := name + " " + ver + "  " + desc
-
-			if hovered {
-				sb.WriteString(styleSelected.
-					Background(colorBorderFoc).
-					Foreground(colorBase).
-					Render(" › "+truncate(content, innerW-2)) + "\n")
-			} else {
-				sb.WriteString(styleDimmed.Render("   "+truncate(content, innerW-3)) + "\n")
+			tag := renderRepoTag(pkg.Repository)
+			tagLen := 0
+			if pkg.Repository != "" {
+				tagLen = len(pkg.Repository) + 3 // "[repo] "
 			}
+
+			instBadge := ""
+			instLen := 0
+			if pkg.IsInstalled {
+				instBadge = lipgloss.NewStyle().Foreground(colorGreen).Bold(true).Render("✓")
+				instLen = 2 // "✓ "
+			}
+
+			const nameW, verW = 20, 10
+			nameStr := padRight(truncate(pkg.Name, nameW), nameW)
+			verStr := padRight(truncate(pkg.Version, verW), verW)
+
+			descW := innerW - nameW - verW - tagLen - instLen - 7
+			descStr := truncate(pkg.Description, max(8, descW))
+
+			var nameRendered string
+			if hovered {
+				nameRendered = lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render(nameStr)
+			} else {
+				nameRendered = lipgloss.NewStyle().Foreground(colorText).Render(nameStr)
+			}
+
+			prefix := "   "
+			if hovered {
+				prefix = lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render(" › ")
+			}
+
+			row := prefix
+			if tag != "" {
+				row += tag + " "
+			}
+			row += nameRendered + " " + styleDimmed.Render(verStr) + " "
+			if instBadge != "" {
+				row += instBadge + " "
+			}
+			row += styleDimmed.Render(descStr)
+
+			sb.WriteString(row + "\n")
 		}
 
 		// Scroll indicator
@@ -163,26 +326,26 @@ func (m Model) renderInstallModal() string {
 				fmt.Sprintf("\n  %d/%d  %d%%", m.installResultsCursor+1, count, pct)))
 		}
 
-		sb.WriteString("\n\n" + styleDimmed.Render("j/k navigate  ") +
-			styleKey.Render("Tab") + styleDimmed.Render(" desc  Enter select  Esc/") +
+		sb.WriteString("\n\n" + styleDimmed.Render("j/k navigate  |  ") +
+			styleKey.Render("Tab") + styleDimmed.Render(" inspect & AI  |  Enter install  |  Esc/") +
 			styleKey.Render("/") + styleDimmed.Render(" search"))
 
 	// ── Phase: searching ─────────────────────────────────────────────────
 	case m.installSearching:
-		sb.WriteString(styleDimmed.Render("Query: ")+styleVal.Render(m.installPkgInput.Value()) + "\n\n")
-		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Searching...") + "\n\n")
+		sb.WriteString(styleDimmed.Render("Searching ")+styleAILabel.Render(mgrTitle)+styleDimmed.Render(" for: ")+styleVal.Render(m.installPkgInput.Value()) + "\n\n")
+		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Searching repositories...") + "\n\n")
 		sb.WriteString(styleDimmed.Render("Esc to cancel"))
 
 	// ── Phase: search error ──────────────────────────────────────────────
 	case m.installSearchErr != "":
 		sb.WriteString(styleOrphan.Render(m.installSearchErr) + "\n\n")
-		sb.WriteString(styleDimmed.Render("Enter to retry  Esc to go back"))
+		sb.WriteString(styleDimmed.Render("Tab switch manager  |  Enter to retry  |  Esc to go back"))
 
 	// ── Phase: search input (default) ────────────────────────────────────
 	default:
-		sb.WriteString(styleDimmed.Render("Search for a package to install:") + "\n\n")
+		sb.WriteString(styleDimmed.Render("Search packages to install via ") + styleAILabel.Render(mgrTitle) + styleDimmed.Render(":") + "\n\n")
 		sb.WriteString(m.installPkgInput.View() + "\n\n")
-		sb.WriteString(styleDimmed.Render("Enter to search  Esc to close"))
+		sb.WriteString(styleDimmed.Render("Tab switch manager  |  Enter to search  |  Esc to close"))
 	}
 
 	modalBox := lipgloss.NewStyle().
@@ -336,14 +499,14 @@ func (m Model) renderDetailPanel() string {
 	h := m.height - 3
 
 	var content string
-	if m.focusedPanel != panelDetail {
-		content = m.renderDetailEmpty()
-	} else if m.selectedPkg == nil && len(m.selectedPkgs) <= 1 {
-		content = m.renderDetailEmpty()
-	} else if m.askingPassword || m.removingLoading || m.removeErr != "" {
+	if m.askingPassword || m.removingLoading || m.removeErr != "" {
 		// Render the action view (password/spinner/error) directly in the
 		// panel instead of the viewport so it never overflows.
 		content = m.renderActionView(w)
+	} else if m.focusedPanel != panelDetail {
+		content = m.renderDetailEmpty()
+	} else if m.selectedPkg == nil && len(m.selectedPkgs) <= 1 {
+		content = m.renderDetailEmpty()
 	} else {
 		content = m.detailVP.View()
 	}
@@ -403,9 +566,20 @@ func (m Model) renderStatusBar() string {
 			styleKey.Render("Enter") + " confirm",
 			styleKey.Render("Esc") + " cancel",
 		}
+	} else if m.focusedPanel == panelSidebar {
+		hints = []string{
+			styleKey.Render("j/k") + " move",
+			styleKey.Render("l/Enter") + " list",
+			styleKey.Render("u/U") + " upgrade",
+			styleKey.Render("i") + " install",
+			styleKey.Render("o") + " orphans",
+			styleKey.Render("q") + " quit",
+		}
 	} else if m.focusedPanel == panelDetail {
 		hints = []string{
 			styleKey.Render("x") + " remove",
+			styleKey.Render("u") + " update",
+			styleKey.Render("U") + " upgrade all",
 			styleKey.Render("i") + " install",
 			styleKey.Render("o") + " orphans",
 			styleKey.Render("j/k") + " scroll",
@@ -417,6 +591,8 @@ func (m Model) renderStatusBar() string {
 			styleKey.Render("v/Spc") + " select",
 			styleKey.Render("j/k") + " move",
 			styleKey.Render("l/Enter") + " open",
+			styleKey.Render("u") + " update",
+			styleKey.Render("U") + " upgrade all",
 			styleKey.Render("s") + " sort",
 			styleKey.Render("i") + " install",
 			styleKey.Render("o") + " orphans",

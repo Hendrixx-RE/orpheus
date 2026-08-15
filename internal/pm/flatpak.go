@@ -25,7 +25,27 @@ func (p *Flatpak) InstallCmd(name string) []string {
 	return []string{"sh", "-c", cmdStr}
 }
 
+func (p *Flatpak) UpdateCmd() []string {
+	cmdStr := "dbus-run-session flatpak update -y"
+	return []string{"sh", "-c", cmdStr}
+}
+
+func (p *Flatpak) UpdatePackagesCmd(names []string) []string {
+	cmdStr := "dbus-run-session flatpak update -y " + strings.Join(names, " ")
+	return []string{"sh", "-c", cmdStr}
+}
+
 func (p *Flatpak) Search(query string) ([]Package, error) {
+	installedMap := make(map[string]bool)
+	if instOut, err := runCmdAllowExit1("flatpak", "list", "--app", "--columns=application:f"); err == nil {
+		for _, line := range strings.Split(string(instOut), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" && strings.Contains(line, ".") {
+				installedMap[line] = true
+			}
+		}
+	}
+
 	out, err := runCmdAllowExit1("flatpak", "search",
 		"--columns=application:f,name:f,version:f,description:f", query)
 	if err != nil {
@@ -64,6 +84,8 @@ func (p *Flatpak) Search(query string) ([]Package, error) {
 			Name:        appID,
 			Version:     version,
 			Description: displayDesc,
+			Repository:  "flathub",
+			IsInstalled: installedMap[appID],
 		})
 	}
 	return pkgs, nil

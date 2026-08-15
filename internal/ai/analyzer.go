@@ -208,18 +208,50 @@ func (a *Analyzer) waitRateLimit(ctx context.Context) error {
 	return nil
 }
 
-func (a *Analyzer) analyzeUncached(ctx context.Context, pkg *pm.Package, explicitNames []string) (string, error) {
+// AnalyzeSummary generates a short 1-2 sentence description of what an uninstalled package is.
+func (a *Analyzer) AnalyzeSummary(ctx context.Context, pkg *pm.Package) (string, error) {
+	if a.apiKey == "" {
+		return "", fmt.Errorf("%s API key not set in .env", strings.ToUpper(string(a.provider)))
+	}
 
-	var body []byte
+	key := "summary@" + pkg.Name + "@" + pkg.Version
+	return a.sf.Do(key, func() (string, error) {
+		if err := a.waitRateLimit(ctx); err != nil {
+			return "", err
+		}
+
+		systemPrompt := "You are a concise software reference. Give a clear, helpful 1-2 sentence description of what this software does and its primary purpose. Plain text only, no markdown headers or bullet points."
+		userPrompt := fmt.Sprintf("Describe this software in 1-2 sentences:\nPackage: %s %s\nRepository info: %s",
+			pkg.Name, pkg.Version, pkg.Description)
+
+		res, err := a.sendChatRequest(ctx, systemPrompt, userPrompt, 150)
+
+		a.mu.Lock()
+		a.lastReqTime = time.Now()
+		if err != nil && strings.Contains(err.Error(), "rate limited") {
+			a.rateLimitedUntil = time.Now().Add(30 * time.Second)
+		}
+		a.mu.Unlock()
+
+		return res, err
+	})
+}
+
+func (a *Analyzer) analyzeUncached(ctx context.Context, pkg *pm.Package, explicitNames []string) (string, error) {
 	systemPrompt := "You are a Linux package analyzer. Give concise, honest analysis. No markdown headers or bullet points. Plain text only."
 	userPrompt := buildPrompt(pkg, explicitNames)
+	return a.sendChatRequest(ctx, systemPrompt, userPrompt, 300)
+}
+
+func (a *Analyzer) sendChatRequest(ctx context.Context, systemPrompt, userPrompt string, maxTokens int) (string, error) {
+	var body []byte
 
 	if a.provider == Anthropic {
 		body, _ = json.Marshal(map[string]any{
 			"model":      a.model,
 			"system":     systemPrompt,
 			"messages":   []map[string]string{{"role": "user", "content": userPrompt}},
-			"max_tokens": 300,
+			"max_tokens": maxTokens,
 		})
 	} else {
 		// OpenAI compatible format (Groq, OpenAI, Gemini)
@@ -229,7 +261,7 @@ func (a *Analyzer) analyzeUncached(ctx context.Context, pkg *pm.Package, explici
 				{"role": "system", "content": systemPrompt},
 				{"role": "user", "content": userPrompt},
 			},
-			"max_tokens": 300,
+			"max_tokens": maxTokens,
 		})
 	}
 

@@ -22,6 +22,8 @@ type Package struct {
 	ServiceName   string
 	ServiceStatus string
 	IsSystem      bool
+	Repository    string
+	IsInstalled   bool
 }
 
 type Manager interface {
@@ -32,8 +34,10 @@ type Manager interface {
 	UninstallOrphansCmd() []string
 	GetOrphans() ([]string, error)
 	InstallCmd(name string) []string
+	UpdateCmd() []string
+	UpdatePackagesCmd(names []string) []string
 	Search(query string) ([]Package, error)
-	// RequiresSudo reports whether install/uninstall commands must be run
+	// RequiresSudo reports whether install/uninstall/update commands must be run
 	// through sudo. Pacman always does; Flatpak manages its own
 	// privilege escalation and must NOT be wrapped in sudo.
 	RequiresSudo() bool

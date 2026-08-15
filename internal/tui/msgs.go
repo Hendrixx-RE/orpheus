@@ -25,7 +25,23 @@ type pkgRemovedMsg struct {
 }
 
 type pkgInstalledMsg struct {
-	err error
+	err    error
+	output string
+}
+
+type pkgUpdateOutputMsg struct {
+	err    error
+	output string
+}
+
+type pkgInstallOutputMsg struct {
+	chunk string
+}
+
+type installAIAnalysisMsg struct {
+	pkgKey string
+	text   string
+	err    error
 }
 
 type pkgSearchResultMsg struct {

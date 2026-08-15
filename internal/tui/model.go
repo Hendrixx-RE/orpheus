@@ -77,6 +77,7 @@ type Model struct {
 
 	// install state
 	installingModal      bool
+	installMgrIndex      int
 	installPkgInput      textinput.Model
 	installAskPassword   bool
 	installPasswordInput textinput.Model
@@ -90,6 +91,24 @@ type Model struct {
 	installSearching     bool
 	installSearchErr     string
 	installShowDesc      bool
+	// install preview AI analysis
+	installAIAnalysis string
+	installAILoading  bool
+	installAIErr      string
+	// install output
+	installOutput   string
+	installOutputVP viewport.Model
+
+	// update modal
+	updatingModal       bool
+	updateAskPassword   bool
+	updatePasswordInput textinput.Model
+	updatingLoading     bool
+	updateErr           string
+	updateOutput        string
+	updateOutputVP      viewport.Model
+	updateDone          bool
+	updateTargets       []string
 
 	spinner spinner.Model
 	lastKey string
@@ -116,22 +135,42 @@ func New() Model {
 	ti.CharLimit = 64
 
 	pi := textinput.New()
-	pi.Placeholder = "password"
+	pi.Placeholder = "sudo password..."
 	pi.EchoMode = textinput.EchoPassword
 	pi.EchoCharacter = '•'
 	pi.CharLimit = 64
+	pi.Prompt = "🔑 "
+	pi.PromptStyle = lipgloss.NewStyle().Foreground(colorYellow)
+	pi.TextStyle = lipgloss.NewStyle().Foreground(colorText)
+	pi.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
 
 	ii := textinput.New()
-	ii.Placeholder = "search packages..."
+	ii.Placeholder = "search packages to install..."
 	ii.CharLimit = 128
 
 	ipi := textinput.New()
-	ipi.Placeholder = "sudo password"
+	ipi.Placeholder = "sudo password..."
 	ipi.EchoMode = textinput.EchoPassword
 	ipi.EchoCharacter = '•'
 	ipi.CharLimit = 64
+	ipi.Prompt = "🔑 "
+	ipi.PromptStyle = lipgloss.NewStyle().Foreground(colorYellow)
+	ipi.TextStyle = lipgloss.NewStyle().Foreground(colorText)
+	ipi.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
+
+	upi := textinput.New()
+	upi.Placeholder = "sudo password..."
+	upi.EchoMode = textinput.EchoPassword
+	upi.EchoCharacter = '•'
+	upi.CharLimit = 64
+	upi.Prompt = "🔑 "
+	upi.PromptStyle = lipgloss.NewStyle().Foreground(colorYellow)
+	upi.TextStyle = lipgloss.NewStyle().Foreground(colorText)
+	upi.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
 
 	vp := viewport.New(0, 0)
+	ivp := viewport.New(0, 0)
+	uvp := viewport.New(0, 0)
 
 	c, _ := cache.New()
 
@@ -141,7 +180,10 @@ func New() Model {
 		passwordInput:        pi,
 		installPkgInput:      ii,
 		installPasswordInput: ipi,
+		updatePasswordInput:  upi,
 		detailVP:             vp,
+		installOutputVP:      ivp,
+		updateOutputVP:       uvp,
 		loading:              true,
 		selectedPkgs:         make(map[string]bool),
 		managers:             []pm.Manager{pm.NewPacman(), pm.NewFlatpak()},
