@@ -606,11 +606,11 @@ func (m Model) renderStatusBar() string {
 	var syncIndicator string
 	if m.syncTotal > 0 {
 		if m.syncActive {
-			syncIndicator = styleAILabel.Render(fmt.Sprintf("[AI %d/%d]", m.syncDone, m.syncTotal))
+			syncIndicator = styleAILabel.Render(fmt.Sprintf("[%d/%d]", m.syncDone, m.syncTotal))
 		} else if m.syncDone == m.syncTotal {
-			syncIndicator = styleVerdict.Render("[AI 100%]")
+			syncIndicator = styleVerdict.Render(fmt.Sprintf("[%d/%d]", m.syncDone, m.syncTotal))
 		} else {
-			syncIndicator = styleDimmed.Render(fmt.Sprintf("[AI %d/%d]", m.syncDone, m.syncTotal))
+			syncIndicator = styleDimmed.Render(fmt.Sprintf("[%d/%d]", m.syncDone, m.syncTotal))
 		}
 	}
 

@@ -139,7 +139,7 @@ func New() Model {
 	pi.EchoMode = textinput.EchoPassword
 	pi.EchoCharacter = '•'
 	pi.CharLimit = 64
-	pi.Prompt = "🔑 "
+	pi.Prompt = " "
 	pi.PromptStyle = lipgloss.NewStyle().Foreground(colorYellow)
 	pi.TextStyle = lipgloss.NewStyle().Foreground(colorText)
 	pi.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
@@ -153,7 +153,7 @@ func New() Model {
 	ipi.EchoMode = textinput.EchoPassword
 	ipi.EchoCharacter = '•'
 	ipi.CharLimit = 64
-	ipi.Prompt = "🔑 "
+	ipi.Prompt = " "
 	ipi.PromptStyle = lipgloss.NewStyle().Foreground(colorYellow)
 	ipi.TextStyle = lipgloss.NewStyle().Foreground(colorText)
 	ipi.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
@@ -163,7 +163,7 @@ func New() Model {
 	upi.EchoMode = textinput.EchoPassword
 	upi.EchoCharacter = '•'
 	upi.CharLimit = 64
-	upi.Prompt = "🔑 "
+	upi.Prompt = " "
 	upi.PromptStyle = lipgloss.NewStyle().Foreground(colorYellow)
 	upi.TextStyle = lipgloss.NewStyle().Foreground(colorText)
 	upi.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
