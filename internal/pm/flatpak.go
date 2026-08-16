@@ -21,7 +21,10 @@ func (p *Flatpak) UninstallCmd(names []string) []string {
 }
 
 func (p *Flatpak) InstallCmd(name string) []string {
-	cmdStr := "dbus-run-session flatpak install -y " + name
+	// If identical remotes exist in both system and user scopes (e.g. flathub system + flathub user),
+	// Flatpak pauses to prompt for the target scope. We specify --system with fallback to --user
+	// and add --or-update to prevent interactive prompts and ensure seamless non-interactive installation.
+	cmdStr := "dbus-run-session flatpak install -y --or-update --system " + name + " || dbus-run-session flatpak install -y --or-update --user " + name
 	return []string{"sh", "-c", cmdStr}
 }
 

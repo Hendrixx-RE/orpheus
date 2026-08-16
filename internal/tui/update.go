@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -179,6 +180,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateErr = msg.err.Error()
 		} else {
 			m.updateDone = true
+			m.selectedPkgs = make(map[string]bool)
 		}
 		return m, nil
 
@@ -240,7 +242,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.removingOrphans = false
 				m.passwordInput.Blur()
 				m.passwordInput.SetValue("")
-				if len(m.selectedPkgs) > 1 {
+				if len(m.getSelectedNames()) > 1 {
 					m.detailVP.SetContent(m.buildBatchDetailContent())
 				} else if m.selectedPkg != nil {
 					m.detailVP.SetContent(m.buildDetailContent())
@@ -274,7 +276,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				var cmd tea.Cmd
 				m.passwordInput, cmd = m.passwordInput.Update(msg)
 				if !m.removingOrphans {
-					if len(m.selectedPkgs) > 1 {
+					if len(m.getSelectedNames()) > 1 {
 						m.detailVP.SetContent(m.buildBatchDetailContent())
 					} else {
 						m.detailVP.SetContent(m.buildDetailContent())
@@ -747,19 +749,61 @@ func (m Model) buildBatchDetailContent() string {
 	names := m.getSelectedNames()
 	count := len(names)
 
-	sb.WriteString(styleTitle.Render("Batch Operation") + "\n")
+	sb.WriteString(styleTitle.Render("Batch Removal") + "  " + styleDimmed.Render(fmt.Sprintf("(%d packages)", count)) + "\n")
 	sb.WriteString(styleDivider.Render(strings.Repeat("─", m.detailWidth()-6)) + "\n\n")
 
+	if m.askingPassword {
+		sb.WriteString(styleOrphan.Render(fmt.Sprintf("Sudo Password Required to Remove %d Packages:", count)) + "\n")
+		sb.WriteString(m.passwordInput.View() + "\n")
+		sb.WriteString(styleDimmed.Render("Enter to confirm  |  Esc to cancel") + "\n")
+		sb.WriteString(styleDivider.Render(strings.Repeat("─", m.detailWidth()-6)) + "\n\n")
+	} else if m.removingLoading {
+		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render(fmt.Sprintf("Removing %d packages...", count)) + "\n")
+		sb.WriteString(styleDivider.Render(strings.Repeat("─", m.detailWidth()-6)) + "\n\n")
+	} else if m.removeErr != "" {
+		sb.WriteString(styleOrphan.Render("Removal failed: "+m.removeErr) + "\n")
+		sb.WriteString(styleDimmed.Render("Press x to retry") + "\n")
+		sb.WriteString(styleDivider.Render(strings.Repeat("─", m.detailWidth()-6)) + "\n\n")
+	}
 
-	sb.WriteString(styleVal.Render(fmt.Sprintf("%d packages selected", count)) + "\n\n")
+	// Map package details and calculate total size
+	pkgMap := make(map[string]pm.Package, len(m.allPkgs))
+	for _, p := range m.allPkgs {
+		pkgMap[p.Name] = p
+	}
 
-	// list first few names
-	for i, name := range names {
-		if i >= 10 {
-			sb.WriteString(styleDimmed.Render(fmt.Sprintf("... and %d more", count-10)) + "\n")
-			break
+	var totalSize int64
+	for _, name := range names {
+		if p, ok := pkgMap[name]; ok {
+			totalSize += p.Size
 		}
-		sb.WriteString("  " + name + "\n")
+	}
+
+	var headerInfo string
+	if totalSize > 0 {
+		dummy := pm.Package{Size: totalSize}
+		headerInfo = fmt.Sprintf("Packages to be uninstalled (%d items, %s):", count, dummy.FormatSize())
+	} else {
+		headerInfo = fmt.Sprintf("Packages to be uninstalled (%d items):", count)
+	}
+	sb.WriteString(styleKey.Render(headerInfo) + "\n\n")
+
+	dot := lipgloss.NewStyle().Foreground(colorPurple).Bold(true).Render("●")
+
+	for _, name := range names {
+		if p, ok := pkgMap[name]; ok {
+			sizeStr := ""
+			if p.Size > 0 {
+				sizeStr = " (" + p.FormatSize() + ")"
+			}
+			verStr := ""
+			if p.Version != "" {
+				verStr = " " + styleDimmed.Render(p.Version)
+			}
+			sb.WriteString("  " + dot + " " + styleVal.Render(name) + verStr + styleDimmed.Render(sizeStr) + "\n")
+		} else {
+			sb.WriteString("  " + dot + " " + styleVal.Render(name) + "\n")
+		}
 	}
 
 	sb.WriteString("\n" + styleDivider.Render(strings.Repeat("─", m.detailWidth()-6)) + "\n")
@@ -767,11 +811,13 @@ func (m Model) buildBatchDetailContent() string {
 	sb.WriteString(styleDivider.Render(strings.Repeat("─", m.detailWidth()-6)) + "\n\n")
 
 	switch {
-	case m.aiLoading:
-		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Analyzing...") + "\n")
-	case m.aiErr != "":
-		sb.WriteString(styleOrphan.Render(m.aiErr) + "\n")
-		sb.WriteString(styleDimmed.Render("Press a to retry") + "\n")
+	case m.askingPassword:
+		sb.WriteString(styleDimmed.Render("Enter sudo password above to proceed.") + "\n")
+	case m.removingLoading:
+		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Uninstalling selected packages...") + "\n")
+	case m.removeErr != "":
+		sb.WriteString(styleOrphan.Render(m.removeErr) + "\n")
+		sb.WriteString(styleDimmed.Render("Press x to retry") + "\n")
 	default:
 		sb.WriteString(styleDimmed.Render("Press x to remove all selected packages") + "\n")
 	}
@@ -1325,9 +1371,14 @@ func (m Model) startUpdate() (Model, tea.Cmd) {
 	if m.updatingLoading || m.installingLoading || m.removingLoading {
 		return m, nil
 	}
+	m.commitVisualSelection()
+	targets := m.getSelectedNames()
+	if len(targets) == 0 {
+		return m, nil
+	}
 	m = m.resetUpdateModal()
 	m.updatingModal = true
-	m.updateTargets = m.getSelectedNames()
+	m.updateTargets = targets
 	activeMgr := m.managers[m.activeMgr]
 
 	const modalW = 76
@@ -1344,12 +1395,7 @@ func (m Model) startUpdate() (Model, tea.Cmd) {
 
 	// Flatpak: run directly without password
 	m.updatingLoading = true
-	var cmdArgs []string
-	if len(m.updateTargets) > 0 {
-		cmdArgs = activeMgr.UpdatePackagesCmd(m.updateTargets)
-	} else {
-		cmdArgs = activeMgr.UpdateCmd()
-	}
+	cmdArgs := activeMgr.UpdatePackagesCmd(m.updateTargets)
 	return m, updatePackageCmdAsync(cmdArgs, "", false)
 }
 

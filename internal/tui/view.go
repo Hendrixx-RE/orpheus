@@ -14,6 +14,13 @@ func (m Model) View() string {
 		return "\n  Loading Orpheus...\n"
 	}
 
+	const minWidth = 100
+	const minHeight = 10
+
+	if m.width < minWidth || m.height < minHeight {
+		return m.renderTooSmall(minWidth, minHeight)
+	}
+
 	sidebar := m.renderSidebar()
 	list := m.renderListPanel()
 	detail := m.renderDetailPanel()
@@ -38,6 +45,28 @@ func (m Model) View() string {
 	return mainView
 }
 
+func (m Model) renderTooSmall(minW, minH int) string {
+	if m.width < 35 || m.height < 8 {
+		return fmt.Sprintf("Terminal too small\n(%d×%d < %d×%d)", m.width, m.height, minW, minH)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(styleTitle.Render("Terminal Window Too Small") + "\n\n")
+	sb.WriteString(styleDimmed.Render("Please resize your terminal window:") + "\n\n")
+	sb.WriteString(fmt.Sprintf("  Current size:  %s\n", styleOrphan.Render(fmt.Sprintf("%d × %d", m.width, m.height))))
+	sb.WriteString(fmt.Sprintf("  Required size: %s\n\n", styleVerdict.Render(fmt.Sprintf("%d × %d", minW, minH))))
+	sb.WriteString(styleDimmed.Render("Enlarge the window to continue using Orpheus."))
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorYellow).
+		Padding(1, 3).
+		Align(lipgloss.Center).
+		Render(sb.String())
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+}
+
 func (m Model) renderUpdateModal() string {
 	mgrName := m.managers[m.activeMgr].Name()
 	mgrTitle := strings.ToUpper(mgrName[:1]) + mgrName[1:]
@@ -45,24 +74,41 @@ func (m Model) renderUpdateModal() string {
 		mgrTitle = "Pacman / AUR"
 	}
 
-	const modalW = 76              // outer modal width
+	const modalW = 76             // outer modal width
 	const innerW = modalW - 8 - 2 // minus padding(3*2) and borders(1*2) = 66
 
 	var sb strings.Builder
 	title := "Update Packages"
 	if len(m.updateTargets) > 0 {
-		title = fmt.Sprintf("Update %d Package(s)", len(m.updateTargets))
+		title = fmt.Sprintf("Update %d Package(s) — %s", len(m.updateTargets), mgrTitle)
 	} else {
-		title = "System Upgrade — " + mgrTitle
+		title = "Full Upgrade — " + mgrTitle
 	}
 	sb.WriteString(styleTitle.Render(title) + "\n")
 	sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n\n")
+
+	dot := lipgloss.NewStyle().Foreground(colorPurple).Bold(true).Render("●")
+
+	renderTargetList := func() {
+		if len(m.updateTargets) == 0 {
+			return
+		}
+		sb.WriteString(styleKey.Render(fmt.Sprintf("Packages to be updated (%d items):", len(m.updateTargets))) + "\n")
+		maxShow := minI(len(m.updateTargets), 6)
+		for i := 0; i < maxShow; i++ {
+			sb.WriteString("  " + dot + " " + styleVal.Render(m.updateTargets[i]) + "\n")
+		}
+		if len(m.updateTargets) > maxShow {
+			sb.WriteString(styleDimmed.Render(fmt.Sprintf("  ... and %d more", len(m.updateTargets)-maxShow)) + "\n")
+		}
+		sb.WriteString("\n")
+	}
 
 	switch {
 	// Phase: password input
 	case m.updateAskPassword:
 		if len(m.updateTargets) > 0 {
-			sb.WriteString(styleVal.Render(fmt.Sprintf("Ready to update %d package(s) via %s.", len(m.updateTargets), mgrTitle)) + "\n\n")
+			renderTargetList()
 		} else {
 			sb.WriteString(styleVal.Render(fmt.Sprintf("Ready to upgrade all system packages via %s.", mgrTitle)) + "\n\n")
 		}
@@ -72,7 +118,11 @@ func (m Model) renderUpdateModal() string {
 
 	// Phase: updating in progress
 	case m.updatingLoading:
-		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Updating packages via "+mgrTitle+"...") + "\n\n")
+		if len(m.updateTargets) > 0 {
+			sb.WriteString(m.spinner.View() + " " + styleDimmed.Render(fmt.Sprintf("Updating %d package(s) via %s...", len(m.updateTargets), mgrTitle)) + "\n\n")
+		} else {
+			sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Upgrading packages via "+mgrTitle+"...") + "\n\n")
+		}
 		sb.WriteString(styleDimmed.Render("Please wait, resolving dependencies and applying updates..."))
 
 	// Phase: update error
@@ -99,7 +149,11 @@ func (m Model) renderUpdateModal() string {
 		sb.WriteString(styleDimmed.Render("j/k scroll log  |  Enter/Esc to close and reload"))
 
 	default:
-		sb.WriteString(styleDimmed.Render("Ready to update.") + "\n\n")
+		if len(m.updateTargets) > 0 {
+			renderTargetList()
+		} else {
+			sb.WriteString(styleDimmed.Render("Ready to update.") + "\n\n")
+		}
 		sb.WriteString(styleDimmed.Render("Enter to confirm  |  Esc to close"))
 	}
 
@@ -183,7 +237,7 @@ func (m Model) renderInstallModal() string {
 		mgrTitle = "Pacman / AUR"
 	}
 
-	const modalW = 76              // outer modal width
+	const modalW = 76             // outer modal width
 	const innerW = modalW - 8 - 2 // minus padding(3*2) and borders(1*2) = 66
 
 	var sb strings.Builder
@@ -332,7 +386,7 @@ func (m Model) renderInstallModal() string {
 
 	// ── Phase: searching ─────────────────────────────────────────────────
 	case m.installSearching:
-		sb.WriteString(styleDimmed.Render("Searching ")+styleAILabel.Render(mgrTitle)+styleDimmed.Render(" for: ")+styleVal.Render(m.installPkgInput.Value()) + "\n\n")
+		sb.WriteString(styleDimmed.Render("Searching ") + styleAILabel.Render(mgrTitle) + styleDimmed.Render(" for: ") + styleVal.Render(m.installPkgInput.Value()) + "\n\n")
 		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Searching repositories...") + "\n\n")
 		sb.WriteString(styleDimmed.Render("Esc to cancel"))
 
@@ -358,7 +412,6 @@ func (m Model) renderInstallModal() string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modalBox)
 }
 
-
 func (m Model) renderSidebar() string {
 	w := m.sidebarWidth()
 	h := m.height - 3
@@ -373,7 +426,7 @@ func (m Model) renderSidebar() string {
 		if len(label) > 0 {
 			label = strings.ToUpper(label[:1]) + label[1:]
 		}
-		
+
 		if m.activeMgr == i {
 			line = styleSidebarActive.Render(">   " + label)
 		} else {
@@ -491,8 +544,6 @@ func renderPkgLine(p pm.Package, width int, checked bool, hovered bool) string {
 
 	return "  " + line
 }
-
-
 
 func (m Model) renderDetailPanel() string {
 	w := m.detailWidth()
