@@ -54,7 +54,7 @@ func (g *singleflightGroup) Do(key string, fn func() (string, error)) (string, e
 }
 
 const (
-	defaultGroqModel      = "llama-3.3-70b-versatile"
+	defaultGroqModel      = "openai/gpt-oss-120b"
 	defaultOpenAIModel    = "gpt-4o-mini"
 	defaultGeminiModel    = "gemini-1.5-flash"
 	defaultAnthropicModel = "claude-3-5-haiku-latest"
@@ -224,7 +224,7 @@ func (a *Analyzer) AnalyzeSummary(ctx context.Context, pkg *pm.Package) (string,
 		userPrompt := fmt.Sprintf("Describe this software in 1-2 sentences:\nPackage: %s %s\nRepository info: %s",
 			pkg.Name, pkg.Version, pkg.Description)
 
-		res, err := a.sendChatRequest(ctx, systemPrompt, userPrompt, 150)
+		res, err := a.sendChatRequest(ctx, systemPrompt, userPrompt, 500)
 
 		a.mu.Lock()
 		a.lastReqTime = time.Now()
@@ -240,7 +240,7 @@ func (a *Analyzer) AnalyzeSummary(ctx context.Context, pkg *pm.Package) (string,
 func (a *Analyzer) analyzeUncached(ctx context.Context, pkg *pm.Package, explicitNames []string) (string, error) {
 	systemPrompt := "You are a Linux package analyzer. Give concise, honest analysis. No markdown headers or bullet points. Plain text only."
 	userPrompt := buildPrompt(pkg, explicitNames)
-	return a.sendChatRequest(ctx, systemPrompt, userPrompt, 300)
+	return a.sendChatRequest(ctx, systemPrompt, userPrompt, 800)
 }
 
 func (a *Analyzer) sendChatRequest(ctx context.Context, systemPrompt, userPrompt string, maxTokens int) (string, error) {
@@ -381,7 +381,7 @@ func extractContent(data []byte, provider Provider) (string, error) {
 		if len(resp.Content) == 0 {
 			return "", fmt.Errorf("empty response")
 		}
-		return resp.Content[0].Text, nil
+		return stripThinking(resp.Content[0].Text), nil
 	}
 
 	// OpenAI compatible
@@ -398,7 +398,23 @@ func extractContent(data []byte, provider Provider) (string, error) {
 	if len(resp.Choices) == 0 {
 		return "", fmt.Errorf("empty response")
 	}
-	return resp.Choices[0].Message.Content, nil
+	return stripThinking(resp.Choices[0].Message.Content), nil
+}
+
+func stripThinking(s string) string {
+	for {
+		start := strings.Index(s, "<think>")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(s, "</think>")
+		if end == -1 {
+			s = s[:start]
+			break
+		}
+		s = s[:start] + s[end+len("</think>"):]
+	}
+	return strings.TrimSpace(s)
 }
 
 func extractError(data []byte, provider Provider) string {

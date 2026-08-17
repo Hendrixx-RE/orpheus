@@ -47,7 +47,8 @@ orpheus/
     │   ├── package.go       # Package struct, Manager interface
     │   ├── detect.go        # Dynamic host package manager detection
     │   ├── detect_test.go   # Manager detection unit tests
-    │   ├── pacman.go        # Pacman/AUR implementation (pacman -Qi parser, search, update, orphans)
+    │   ├── pacman.go        # Pacman official implementation (pacman -Qin parser, search, update, orphans)
+    │   ├── aur.go           # AUR implementation (pacman -Qim, yay/paru helper search & install)
     │   ├── flatpak.go       # Flatpak implementation (list, search, install, update, cleanup)
     │   ├── fuzzy.go         # Fuzzy search and repository relevance ranking engine
     │   └── fuzzy_test.go    # Fuzzy scoring unit tests
@@ -121,8 +122,9 @@ Helper methods: `SizeMB() float64`, `FormatSize() string` (human-readable: B/KiB
 
 | Manager | `Name()` | `ListAll()` | `InstallCmd()` | `UpdateCmd()` | `UninstallCmd()` |
 |---|---|---|---|---|---|
-| **Pacman** | `"pacman"` | `pacman -Qi` → full parser, marks base/base-devel as `IsSystem` | `["<helper>", "-S", "--noconfirm", name]` | `["<helper>", "-Syu", "--noconfirm"]` | `["pacman", "-Rns", "--noconfirm", ...names]` |
-| **Flatpak** | `"flatpak"` | `flatpak list --app --columns=...` | `["sh", "-c", "dbus-run-session flatpak install -y " + name]` | `["sh", "-c", "dbus-run-session flatpak update -y"]` | `["sh", "-c", "dbus-run-session flatpak uninstall -y --delete-data ... && dbus-run-session flatpak uninstall -y --unused"]` |
+| **Pacman** | `"pacman"` | `pacman -Qin` → native packages, marks base/base-devel as `IsSystem` | `["pacman", "-S", "--noconfirm", name]` | `["pacman", "-Syu", "--noconfirm"]` | `["pacman", "-Rns", "--noconfirm", ...names]` |
+| **AUR** | `"aur"` | `pacman -Qim` → foreign/AUR packages | `["<helper>", "-S", "--noconfirm", name]` | `["<helper>", "-Sua", "--noconfirm"]` | `["pacman", "-Rns", "--noconfirm", ...names]` |
+| **Flatpak** | `"flatpak"` | `flatpak list --app --columns=...` | `["sh", "-c", "dbus-run-session flatpak install -y --or-update --system " + name + " || ..."]` | `["sh", "-c", "dbus-run-session flatpak update -y"]` | `["sh", "-c", "dbus-run-session flatpak uninstall -y --delete-data ... && dbus-run-session flatpak uninstall -y --unused"]` |
 
 #### Relevance & Fuzzy Ranking Engine (`fuzzy.go`)
 
@@ -132,7 +134,7 @@ Helper methods: `SizeMB() float64`, `FormatSize() string` (human-readable: B/KiB
 ### 3. AI Analysis (`internal/ai/analyzer.go`)
 
 - Uses **Groq API** at `https://api.groq.com/openai/v1/chat/completions`.
-- Default model: `llama-3.3-70b-versatile` (configurable via `ORPHEUS_MODEL` env var).
+- Default model: `openai/gpt-oss-120b` (configurable via `ORPHEUS_MODEL` env var).
 - API key read from `GROQ_API_KEY` env var.
 - HTTP client with 30s timeout.
 - **Singleflight Concurrency**: Collapses concurrent identical requests into a single in-flight call using `singleflightGroup`.
@@ -160,12 +162,12 @@ Helper methods: `SizeMB() float64`, `FormatSize() string` (human-readable: B/KiB
 
 | Key | Context | Action |
 |---|---|---|
-| `j` / `k` | Global / List / Detail | Navigate down / up |
-| `h` / `l` | Panels | Switch panel focus (Sidebar ↔ List ↔ Detail) |
-| `Tab` | Global / List / Detail | Switch active package manager (Pacman ↔ Flatpak) |
+| `j` / `k` | Global / List / Detail | Navigate down / up (auto-displays package detail on hover) |
+| `h` / `l` | Panels | Switch panel focus (Sidebar ↔ List ↔ Detail viewport scroll) |
+| `Tab` | Global / List / Detail | Switch active package manager (Pacman ↔ AUR ↔ Flatpak) |
 | `Space` | List | Toggle selection for package under cursor |
 | `v` | List | Enter / commit visual range selection mode |
-| `Enter` / `l` | List | Open package detail |
+| `Enter` / `l` | List | Focus detail panel (scroll view) / commit selection |
 | `x` | List / Detail | Remove highlighted or multi-selected package(s) |
 | `i` | Global | Open package search & installation modal |
 | `u` | List / Detail | Update selected package(s) |

@@ -32,11 +32,13 @@ A clean, vim-navigable interface:
 - **Package List (Middle)**: Real-time filtering, virtual scrolling, selection badges, and size formatting.
 - **Detail Panel (Right)**: Comprehensive package metadata, dependencies, action status, and AI insights.
 
-###  Multi-Manager Operations
+###  Multi-Manager Operations (Auto-Detected)
+Orpheus inspects your machine and automatically activates only the package managers present on your system:
 | Manager | What It Lists | Install / Search | Full Upgrade (`U`) | Uninstall Strategy |
 |---|---|---|---|---|
-| **Pacman** | All explicitly installed packages (`pacman -Qi`) | Official Repos (`[core]`, `[extra]`, `[multilib]`) + **AUR** via `yay`/`paru` | `yay -Syu --noconfirm` / `pacman -Syu` | `pacman -Rns --noconfirm` (recursive dependency removal) |
-| **Flatpak** | All installed Flatpak desktop applications | Remote search on configured Flatpak remotes (Flathub, etc.) | `flatpak update -y` | Uninstalls app + deletes user data + cleans unused runtimes |
+| **Pacman** | Official Arch packages (`pacman -Qin`) | Official Repos (`[core]`, `[extra]`, `[multilib]`) | `pacman -Syu --noconfirm` | `pacman -Rns --noconfirm` (recursive dependency removal) |
+| **AUR** | Foreign/AUR packages (`pacman -Qim`) | Arch User Repository (`yay -Ssa` / `paru -Ssa`) | `yay -Sua --noconfirm` / `paru -Sua` | `pacman -Rns --noconfirm` |
+| **Flatpak** | Installed Flatpak desktop applications | Configured Flatpak remotes (Flathub, etc.) | `flatpak update -y` | Uninstalls app + deletes data + cleans unused runtimes |
 
 ###  AI-Powered Package Analysis
 Press `a` on any package and Orpheus leverages Groq (Llama 3.3 70B) to deliver context-aware intelligence:
@@ -77,13 +79,13 @@ Orpheus uses intuitive **vim-style keybindings** throughout. The status bar at t
 ### Global & Navigation
 | Key | Action |
 |---|---|
-| `j` / `k` / `↓` / `↑` | Move down / up |
-| `h` / `l` / `←` / `→` | Focus left / right panel |
+| `j` / `k` / `↓` / `↑` | Move down / up (details auto-display for hovered package) |
+| `h` / `l` / `←` / `→` | Switch panel focus (Sidebar ↔ List ↔ Detail scroll) |
 | `Ctrl+D` / `Ctrl+U` | Half-page down / up |
 | `G` | Jump to bottom |
 | `gg` | Jump to top |
-| `Tab` | Switch active package manager (Pacman ↔ Flatpak) |
-| `Enter` / `l` | Open detail / commit selection / confirm |
+| `Tab` | Switch active package manager (Pacman ↔ AUR ↔ Flatpak) |
+| `l` / `Enter` | Focus detail panel (scroll view) / confirm modal |
 | `Esc` | Clear visual selection / cancel / exit search / back |
 | `q` | Quit Orpheus |
 
@@ -131,8 +133,8 @@ Create a `.env` file in the project directory (or in the same directory as the `
 
 ```env
 GROQ_API_KEY=your_groq_api_key_here
-# Optional custom model (defaults to llama-3.3-70b-versatile)
-# ORPHEUS_MODEL=llama-3.3-70b-versatile
+# Optional custom model (defaults to openai/gpt-oss-120b)
+# ORPHEUS_MODEL=openai/gpt-oss-120b
 ```
 
 #### Get a Free Groq API Key:

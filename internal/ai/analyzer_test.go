@@ -32,7 +32,7 @@ func TestAnalyzerSingleflightDeduplication(t *testing.T) {
 
 	analyzer := &Analyzer{
 		provider: Groq,
-		model:    "llama-3.3-70b-versatile",
+		model:    "openai/gpt-oss-120b",
 		endpoint: server.URL,
 		apiKey:   "test-key",
 		client:   server.Client(),

@@ -67,15 +67,28 @@ func (m Model) View() string {
 	return mainView
 }
 
+func mgrDisplayName(name string) string {
+	switch strings.ToLower(name) {
+	case "aur":
+		return "AUR"
+	case "pacman":
+		return "Pacman"
+	case "flatpak":
+		return "Flatpak"
+	default:
+		if len(name) > 0 {
+			return strings.ToUpper(name[:1]) + name[1:]
+		}
+		return name
+	}
+}
+
 func (m Model) renderTopTabBar() string {
 	var sb strings.Builder
 	sb.WriteString(" " + styleTitle.Render("Orpheus") + "  ")
 
 	for i, mgr := range m.managers {
-		label := mgr.Name()
-		if len(label) > 0 {
-			label = strings.ToUpper(label[:1]) + label[1:]
-		}
+		label := mgrDisplayName(mgr.Name())
 		tabText := fmt.Sprintf("[%d] %s", i+1, label)
 		if m.activeMgr == i {
 			sb.WriteString(styleSidebarActive.Render(tabText) + "  ")
@@ -120,12 +133,7 @@ func (m Model) renderTooSmall(minW, minH int) string {
 }
 
 func (m Model) renderUpdateModal() string {
-	mgrName := m.managers[m.activeMgr].Name()
-	mgrTitle := strings.ToUpper(mgrName[:1]) + mgrName[1:]
-	if mgrName == "pacman" {
-		mgrTitle = "Pacman / AUR"
-	}
-
+	mgrTitle := mgrDisplayName(m.managers[m.activeMgr].Name())
 	modalW := minI(76, maxI(36, m.width-4))
 	innerW := modalW - 8 - 2
 
@@ -220,8 +228,7 @@ func (m Model) renderUpdateModal() string {
 }
 
 func (m Model) renderOrphanModal() string {
-	mgrName := m.managers[m.activeMgr].Name()
-	mgrTitle := strings.ToUpper(mgrName[:1]) + mgrName[1:]
+	mgrTitle := mgrDisplayName(m.managers[m.activeMgr].Name())
 	modalW := minI(50, maxI(36, m.width-4))
 	innerW := modalW - 8 - 2
 	var sb strings.Builder
@@ -250,7 +257,7 @@ func (m Model) renderOrphanModal() string {
 		sb.WriteString(styleVal.Render("No orphans to clean.") + "\n\n")
 		sb.WriteString(styleDimmed.Render("(Press Esc to close)"))
 	default:
-		sb.WriteString(styleDimmed.Render("Press o to remove orphan packages for "+mgrName) + "\n\n")
+		sb.WriteString(styleDimmed.Render("Press o to remove orphan packages for "+mgrTitle) + "\n\n")
 		sb.WriteString(styleDimmed.Render("(Press Esc to close)"))
 	}
 
@@ -270,7 +277,7 @@ func renderRepoTag(repo string) string {
 		return lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("[aur]")
 	case "flathub":
 		return lipgloss.NewStyle().Foreground(colorPurple).Bold(true).Render("[flathub]")
-	case "core", "extra", "multilib":
+	case "core", "extra", "multilib", "pacman":
 		return lipgloss.NewStyle().Foreground(colorCyan).Bold(true).Render("[" + repo + "]")
 	default:
 		if repo == "" {
@@ -285,11 +292,7 @@ func (m Model) renderInstallModal() string {
 	if mgrIdx < 0 || mgrIdx >= len(m.managers) {
 		mgrIdx = m.activeMgr
 	}
-	mgrName := m.managers[mgrIdx].Name()
-	mgrTitle := strings.ToUpper(mgrName[:1]) + mgrName[1:]
-	if mgrName == "pacman" {
-		mgrTitle = "Pacman / AUR"
-	}
+	mgrTitle := mgrDisplayName(m.managers[mgrIdx].Name())
 
 	modalW := minI(76, maxI(36, m.width-4))
 	innerW := modalW - 8 - 2
@@ -356,7 +359,7 @@ func (m Model) renderInstallModal() string {
 		case m.installAILoading:
 			sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Fetching short description...") + "\n\n")
 		case m.installAIErr != "":
-			sb.WriteString(styleOrphan.Render(m.installAIErr) + "\n")
+			sb.WriteString(styleOrphan.Render(wrapText(m.installAIErr, innerW)) + "\n\n")
 			sb.WriteString(styleDimmed.Render("Press a to retry") + "\n\n")
 		case m.installAIAnalysis != "":
 			sb.WriteString(styleVal.Render(wrapText(strings.TrimSpace(m.installAIAnalysis), innerW)) + "\n\n")
@@ -476,10 +479,7 @@ func (m Model) renderSidebar() string {
 
 	for i, mgr := range m.managers {
 		var line string
-		label := mgr.Name()
-		if len(label) > 0 {
-			label = strings.ToUpper(label[:1]) + label[1:]
-		}
+		label := mgrDisplayName(mgr.Name())
 
 		if m.activeMgr == i {
 			line = styleSidebarActive.Render(">   " + label)
@@ -608,12 +608,12 @@ func (m Model) renderDetailPanel() string {
 		// Render the action view (password/spinner/error) directly in the
 		// panel instead of the viewport so it never overflows.
 		content = m.renderActionView(w)
-	} else if m.focusedPanel != panelDetail && !m.isCompact() {
-		content = m.renderDetailEmpty()
-	} else if m.selectedPkg == nil && len(m.selectedPkgs) <= 1 {
-		content = m.renderDetailEmpty()
-	} else {
+	} else if len(m.selectedPkgs) > 1 {
 		content = m.detailVP.View()
+	} else if m.selectedPkg != nil {
+		content = m.detailVP.View()
+	} else {
+		content = m.renderDetailEmpty()
 	}
 
 	st := stylePanel
@@ -660,7 +660,7 @@ func (m Model) renderActionView(w int) string {
 func (m Model) renderDetailEmpty() string {
 	var sb strings.Builder
 	sb.WriteString(styleTitle.Render("Detail") + "\n\n")
-	sb.WriteString(styleDimmed.Render("Select a package with Enter\n"))
+	sb.WriteString(styleDimmed.Render("No packages available\n"))
 	return sb.String()
 }
 
@@ -691,11 +691,24 @@ func (m Model) renderStatusBar() string {
 			styleKey.Render("h/Esc") + " back",
 			styleKey.Render("q") + " quit",
 		}
-	} else {
+	} else if m.isCompact() {
 		hints = []string{
+			styleKey.Render("Enter") + " detail",
 			styleKey.Render("v/Spc") + " select",
 			styleKey.Render("j/k") + " move",
-			styleKey.Render("l/Enter") + " open",
+			styleKey.Render("u") + " update",
+			styleKey.Render("U") + " upgrade all",
+			styleKey.Render("s") + " sort",
+			styleKey.Render("i") + " install",
+			styleKey.Render("o") + " orphans",
+			styleKey.Render("/") + " search",
+			styleKey.Render("q") + " quit",
+		}
+	} else {
+		hints = []string{
+			styleKey.Render("j/k") + " move",
+			styleKey.Render("l") + " scroll detail",
+			styleKey.Render("v/Spc") + " select",
 			styleKey.Render("u") + " update",
 			styleKey.Render("U") + " upgrade all",
 			styleKey.Render("s") + " sort",

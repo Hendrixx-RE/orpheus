@@ -28,17 +28,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detailVP = viewport.New(maxI(10, m.detailWidth()-6), m.detailViewportHeight())
 		m.installOutputVP = viewport.New(minI(60, maxI(20, m.width-12)), 6)
 		m.updateOutputVP.Width = minI(66, maxI(20, m.width-12))
-		if m.selectedPkg != nil {
-			m.detailVP.SetContent(m.buildDetailContent())
-		}
+		m.syncCurrentPkgDetail()
 		m.ready = true
 		return m, nil
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
-		// re-render detail content to animate the spinner while AI or removing is loading
-		if (m.aiLoading || m.removingLoading) && m.selectedPkg != nil {
+		// re-render detail content to animate the spinner while AI or removing is loading or syncing
+		if (m.aiLoading || m.removingLoading || m.syncActive) && m.selectedPkg != nil && m.aiText == "" {
 			m.detailVP.SetContent(m.buildDetailContent())
 		}
 		return m, cmd
@@ -47,6 +45,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.syncTotal = msg.Total
 		m.syncDone = msg.Done
 		m.syncActive = !msg.DoneAll
+
+		// If the package currently under cursor was analyzed or cache was populated, refresh live!
+		if m.selectedPkg != nil && (msg.PkgName == m.selectedPkg.Name || msg.PkgName == "") {
+			if text, ok := m.cache.GetPackage(m.selectedPkg.Name, m.selectedPkg.Version); ok {
+				m.aiText = text
+				m.aiErr = ""
+				m.aiLoading = false
+				m.detailVP.SetContent(m.buildDetailContent())
+			}
+		}
+
 		if !msg.DoneAll && m.syncChan != nil {
 			return m, waitForSyncProgress(m.syncChan)
 		}
@@ -75,6 +84,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.listCursor = 0
 			m.ensureVisible()
 		}
+		m.syncCurrentPkgDetail()
 		return m, nil
 
 	case pkgsLoadedMsg:
@@ -86,6 +96,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.allPkgs = msg.pkgs
 		m.filteredPkgs = msg.pkgs
 		m.applyFilter()
+		syncCmd := m.syncCurrentPkgDetail()
 
 		// Cancel any running background sync and start a new worker for current manager
 		if m.syncCancel != nil {
@@ -97,6 +108,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.syncActive = true
 
 		go runSyncWorker(ctx, m.aiSvc, m.cache, m.allPkgs, m.syncChan)
+		if syncCmd != nil {
+			return m, tea.Batch(syncCmd, waitForSyncProgress(m.syncChan))
+		}
 		return m, waitForSyncProgress(m.syncChan)
 
 	case pkgDetailMsg:
@@ -527,7 +541,9 @@ func (m Model) handleListKey(key string) (Model, tea.Cmd) {
 				m.selectedPkgs[pkg] = true
 			}
 		}
+		cmd := m.syncCurrentPkgDetail()
 		m.lastKey = ""
+		return m, cmd
 	case "v":
 		if m.visualMode {
 			m.commitVisualSelection()
@@ -535,7 +551,9 @@ func (m Model) handleListKey(key string) (Model, tea.Cmd) {
 			m.visualMode = true
 			m.visualStart = m.listCursor
 		}
+		cmd := m.syncCurrentPkgDetail()
 		m.lastKey = ""
+		return m, cmd
 	case "h", "left":
 		if m.isLarge() {
 			m.focusedPanel = panelSidebar
@@ -543,23 +561,35 @@ func (m Model) handleListKey(key string) (Model, tea.Cmd) {
 		m.lastKey = ""
 	case "j", "down":
 		m.moveCursor(1)
+		cmd := m.syncCurrentPkgDetail()
 		m.lastKey = ""
+		return m, cmd
 	case "k", "up":
 		m.moveCursor(-1)
+		cmd := m.syncCurrentPkgDetail()
 		m.lastKey = ""
+		return m, cmd
 	case "ctrl+d":
 		m.moveCursor(m.listPanelHeight() / 2)
+		cmd := m.syncCurrentPkgDetail()
 		m.lastKey = ""
+		return m, cmd
 	case "ctrl+u":
 		m.moveCursor(-m.listPanelHeight() / 2)
+		cmd := m.syncCurrentPkgDetail()
 		m.lastKey = ""
+		return m, cmd
 	case "G":
 		m.jumpBottom()
+		cmd := m.syncCurrentPkgDetail()
 		m.lastKey = ""
+		return m, cmd
 	case "g":
 		if m.lastKey == "g" {
 			m.jumpTop()
+			cmd := m.syncCurrentPkgDetail()
 			m.lastKey = ""
+			return m, cmd
 		} else {
 			m.lastKey = "g"
 		}
@@ -572,22 +602,29 @@ func (m Model) handleListKey(key string) (Model, tea.Cmd) {
 		if m.visualMode {
 			m.visualMode = false
 			m.lastKey = ""
-			return m, nil
+			cmd := m.syncCurrentPkgDetail()
+			return m, cmd
 		}
 		if len(m.selectedPkgs) > 0 {
 			m.selectedPkgs = make(map[string]bool)
 			m.lastKey = ""
-			return m, nil
+			cmd := m.syncCurrentPkgDetail()
+			return m, cmd
 		}
 		if m.searchInput.Value() != "" {
 			m.searchInput.SetValue("")
 			m.applyFilter()
+			cmd := m.syncCurrentPkgDetail()
+			m.lastKey = ""
+			return m, cmd
 		}
 		m.lastKey = ""
 	case "s":
 		m.sortMode = (m.sortMode + 1) % 3
 		m.applyFilter()
+		cmd := m.syncCurrentPkgDetail()
 		m.lastKey = ""
+		return m, cmd
 	case "enter", "l", "right":
 		m.commitVisualSelection()
 		cmd := m.triggerSelect()
@@ -611,58 +648,56 @@ func (m Model) handleListKey(key string) (Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) triggerSelect() tea.Cmd {
-	m.removingOrphans = false
-	list := m.currentList()
-	cursor := m.currentCursor()
-	if cursor >= len(list) {
+func (m *Model) syncCurrentPkgDetail() tea.Cmd {
+	if len(m.filteredPkgs) == 0 {
+		m.selectedPkg = nil
+		m.aiText = ""
+		m.aiLoading = false
+		m.aiErr = ""
+		m.detailVP.SetContent(m.renderDetailEmpty())
 		return nil
 	}
-	m.focusedPanel = panelDetail
+
+	if m.listCursor < 0 {
+		m.listCursor = 0
+	} else if m.listCursor >= len(m.filteredPkgs) {
+		m.listCursor = len(m.filteredPkgs) - 1
+	}
 
 	targets := m.getSelectedNames()
 	if len(targets) > 1 {
 		m.selectedPkg = nil
-		m.removeErr = ""
 		m.detailVP.SetContent(m.buildBatchDetailContent())
-		m.detailVP.GotoTop()
 		return nil
 	}
 
-	pkgName := targets[0]
-	var pkg *pm.Package
-	for i := range m.filteredPkgs {
-		if m.filteredPkgs[i].Name == pkgName {
-			pkg = &m.filteredPkgs[i]
-			break
-		}
-	}
-	if pkg == nil {
-		return nil
-	}
-
-	// If already selected same package, just focus detail
-	if m.selectedPkg != nil && m.selectedPkg.Name == pkg.Name && m.selectedPkg.Size > 0 {
-		m.detailVP.GotoTop()
-		return nil
-	}
-
-	// Show partial info immediately
+	pkg := &m.filteredPkgs[m.listCursor]
 	m.selectedPkg = pkg
+
+	if text, ok := m.cache.GetPackage(pkg.Name, pkg.Version); ok {
+		m.aiText = text
+		m.aiLoading = false
+		m.aiErr = ""
+		m.detailVP.SetContent(m.buildDetailContent())
+		return nil
+	}
+
+	// Not cached yet
 	m.aiText = ""
 	m.aiErr = ""
-	m.aiLoading = false
+	m.detailVP.SetContent(m.buildDetailContent())
 
 	if pkg.Size == 0 {
-		// Need full detail first — analysis will be triggered in pkgDetailMsg handler
-		m.detailVP.SetContent(m.buildDetailContent())
-		m.detailVP.GotoTop()
 		return loadPackageDetail(m.managers[m.activeMgr], pkg.Name)
 	}
 
-	// Auto-analyze: serve from cache instantly, or fire the request
-	cmd := m.autoAnalyze()
-	m.detailVP.SetContent(m.buildDetailContent())
+	return m.autoAnalyze()
+}
+
+func (m *Model) triggerSelect() tea.Cmd {
+	m.removingOrphans = false
+	m.focusedPanel = panelDetail
+	cmd := m.syncCurrentPkgDetail()
 	m.detailVP.GotoTop()
 	return cmd
 }
@@ -739,9 +774,9 @@ func (m Model) buildDetailContent() string {
 
 	switch {
 	case m.aiLoading:
-		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Analyzing...") + "\n")
+		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Analyzing package...") + "\n")
 	case m.aiErr != "":
-		sb.WriteString(styleOrphan.Render(m.aiErr) + "\n")
+		sb.WriteString(styleOrphan.Render(wrapText(m.aiErr, m.detailWidth()-8)) + "\n\n")
 		sb.WriteString(styleDimmed.Render("Press a to retry") + "\n")
 	case m.aiText != "":
 		body, verdict, command := splitVerdict(m.aiText)
@@ -753,7 +788,11 @@ func (m Model) buildDetailContent() string {
 			sb.WriteString(styleAILabel.Render(command) + "\n")
 		}
 	default:
-		sb.WriteString(styleDimmed.Render("Press x to remove") + "\n")
+		if m.syncActive {
+			sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Queued for AI analysis...") + "\n")
+		} else {
+			sb.WriteString(styleDimmed.Render("Press a to analyze  |  Press x to remove") + "\n")
+		}
 	}
 
 	return sb.String()
@@ -1189,18 +1228,37 @@ func wrapText(s string, width int) string {
 		return s
 	}
 	var out strings.Builder
-	words := strings.Fields(s)
-	col := 0
-	for i, w := range words {
-		if col+len(w)+1 > width && col > 0 {
+	lines := strings.Split(s, "\n")
+	for lineIdx, line := range lines {
+		if lineIdx > 0 {
 			out.WriteByte('\n')
-			col = 0
-		} else if i > 0 {
-			out.WriteByte(' ')
-			col++
 		}
-		out.WriteString(w)
-		col += len(w)
+		words := strings.Fields(line)
+		col := 0
+		for _, w := range words {
+			// If a single word is longer than available width, break it down
+			for len(w) > width {
+				if col > 0 {
+					out.WriteByte('\n')
+					col = 0
+				}
+				out.WriteString(w[:width])
+				out.WriteByte('\n')
+				w = w[width:]
+			}
+			if len(w) == 0 {
+				continue
+			}
+			if col+len(w)+1 > width && col > 0 {
+				out.WriteByte('\n')
+				col = 0
+			} else if col > 0 {
+				out.WriteByte(' ')
+				col++
+			}
+			out.WriteString(w)
+			col += len(w)
+		}
 	}
 	return out.String()
 }

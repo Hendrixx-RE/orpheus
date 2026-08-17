@@ -34,22 +34,18 @@ func (p *Pacman) UninstallCmd(names []string) []string {
 }
 
 func (p *Pacman) InstallCmd(name string) []string {
-	helper := getPacmanHelper()
-	return []string{helper, "-S", "--noconfirm", name}
+	return []string{"pacman", "-S", "--noconfirm", name}
 }
 
 func (p *Pacman) UpdateCmd() []string {
-	helper := getPacmanHelper()
-	return []string{helper, "-Syu", "--noconfirm"}
+	return []string{"pacman", "-Syu", "--noconfirm"}
 }
 
 func (p *Pacman) UpdatePackagesCmd(names []string) []string {
-	helper := getPacmanHelper()
-	return append([]string{helper, "-S", "--noconfirm"}, names...)
+	return append([]string{"pacman", "-S", "--noconfirm"}, names...)
 }
 
 func (p *Pacman) Search(query string) ([]Package, error) {
-	helper := getPacmanHelper()
 	trimmed := strings.TrimSpace(query)
 	if trimmed == "" {
 		return nil, nil
@@ -63,7 +59,7 @@ func (p *Pacman) Search(query string) ([]Package, error) {
 		args = []string{"-Ss", "--color=never", trimmed}
 	}
 
-	out, err := runCmdAllowExit1(helper, args...)
+	out, err := runCmdAllowExit1("pacman", args...)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +68,7 @@ func (p *Pacman) Search(query string) ([]Package, error) {
 
 	// If multi-word search returned nothing, try first token
 	if len(pkgs) == 0 && len(words) > 1 {
-		if out, err = runCmdAllowExit1(helper, "-Ss", "--color=never", words[0]); err == nil {
+		if out, err = runCmdAllowExit1("pacman", "-Ss", "--color=never", words[0]); err == nil {
 			pkgs = parsePacmanSs(out)
 		}
 	}
@@ -86,7 +82,7 @@ func (p *Pacman) Search(query string) ([]Package, error) {
 			}
 			regexPattern.WriteRune(r)
 		}
-		if out, err = runCmdAllowExit1(helper, "-Ss", "--color=never", regexPattern.String()); err == nil {
+		if out, err = runCmdAllowExit1("pacman", "-Ss", "--color=never", regexPattern.String()); err == nil {
 			pkgs = parsePacmanSs(out)
 		}
 	}
@@ -167,7 +163,7 @@ func (p *Pacman) GetOrphans() ([]string, error) {
 }
 
 func (p *Pacman) ListAll() ([]Package, error) {
-	allOut, err := runCmd("pacman", "-Qi")
+	allOut, err := runCmd("pacman", "-Qin")
 	if err != nil {
 		return nil, err
 	}
@@ -193,6 +189,9 @@ func (p *Pacman) ListAll() ([]Package, error) {
 	for i := range pkgs {
 		if systemNames[pkgs[i].Name] {
 			pkgs[i].IsSystem = true
+		}
+		if pkgs[i].Repository == "" {
+			pkgs[i].Repository = "pacman"
 		}
 	}
 
