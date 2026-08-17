@@ -3,9 +3,9 @@ package cache
 
 import (
 	"encoding/json"
-	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -39,30 +39,38 @@ func (c *Cache) Get(key string) (string, bool) {
 	return v, ok
 }
 
-// GetPackage retrieves analysis text checking both "name@version" and "name".
+// GetPackage retrieves analysis text checking "name" first, with legacy fallback to "name@version".
 func (c *Cache) GetPackage(name, version string) (string, bool) {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
+	if v, ok := c.data[name]; ok {
+		c.mu.RUnlock()
+		return v, true
+	}
 	if version != "" {
 		if v, ok := c.data[name+"@"+version]; ok {
+			c.mu.RUnlock()
+			// Promote legacy key to name-level cache
+			c.Set(name, v)
 			return v, true
 		}
 	}
-	v, ok := c.data[name]
-	return v, ok
+	c.mu.RUnlock()
+	return "", false
 }
 
-// Has checks if analysis text for a package exists under "name@version" or "name".
+// Has checks if analysis text for a package exists under "name" or legacy "name@version".
 func (c *Cache) Has(name, version string) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	if _, ok := c.data[name]; ok {
+		return true
+	}
 	if version != "" {
 		if _, ok := c.data[name+"@"+version]; ok {
 			return true
 		}
 	}
-	_, ok := c.data[name]
-	return ok
+	return false
 }
 
 func (c *Cache) Path() string {
@@ -82,7 +90,24 @@ func (c *Cache) load() {
 		return
 	}
 	if err := json.Unmarshal(data, &c.data); err != nil {
-		log.Fatal(err)
+		return
+	}
+	// Migrate any legacy "name@version" keys to "name"
+	migrated := false
+	for k, v := range c.data {
+		if strings.HasPrefix(k, "summary@") {
+			continue
+		}
+		if idx := strings.Index(k, "@"); idx != -1 {
+			name := k[:idx]
+			if _, exists := c.data[name]; !exists {
+				c.data[name] = v
+				migrated = true
+			}
+		}
+	}
+	if migrated {
+		c.save()
 	}
 }
 
@@ -93,7 +118,5 @@ func (c *Cache) save() {
 	if err != nil {
 		return
 	}
-	if err := os.WriteFile(c.path, data, 0o644); err != nil {
-		log.Fatal(err)
-	}
+	_ = os.WriteFile(c.path, data, 0o644)
 }

@@ -121,6 +121,7 @@ type Model struct {
 
 	managers  []pm.Manager
 	activeMgr int
+	themeIdx  int
 	aiSvc     *ai.Analyzer
 	cache     *cache.Cache
 }
@@ -218,7 +219,7 @@ func loadPackageDetail(mgr pm.Manager, name string) tea.Cmd {
 
 func analyzePackage(a *ai.Analyzer, c *cache.Cache, pkg *pm.Package, explicitNames []string) tea.Cmd {
 	return func() tea.Msg {
-		key := pkg.Name + "@" + pkg.Version
+		key := pkg.Name
 		if text, ok := c.GetPackage(pkg.Name, pkg.Version); ok {
 			return aiAnalysisMsg{pkgKey: key, text: text}
 		}
@@ -290,8 +291,7 @@ func (m *Model) applyFilter() {
 		} else if strings.Contains(descLower, qLower) {
 			rank = 4
 		} else {
-			key := p.Name + "@" + p.Version
-			if aiText, ok := m.cache.Get(key); ok && contains(aiText, q) {
+			if aiText, ok := m.cache.GetPackage(p.Name, p.Version); ok && contains(aiText, q) {
 				rank = 5
 			}
 		}
@@ -514,4 +514,23 @@ func toLower(s string) string {
 		b[i] = c
 	}
 	return string(b)
+}
+
+func (m *Model) ApplyCurrentTheme() {
+	ApplyTheme(Themes[m.themeIdx])
+	m.spinner.Style = lipgloss.NewStyle().Foreground(colorPurple)
+	m.passwordInput.PromptStyle = lipgloss.NewStyle().Foreground(colorYellow)
+	m.passwordInput.TextStyle = lipgloss.NewStyle().Foreground(colorText)
+	m.passwordInput.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
+	m.installPasswordInput.PromptStyle = lipgloss.NewStyle().Foreground(colorYellow)
+	m.installPasswordInput.TextStyle = lipgloss.NewStyle().Foreground(colorText)
+	m.installPasswordInput.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
+	m.updatePasswordInput.PromptStyle = lipgloss.NewStyle().Foreground(colorYellow)
+	m.updatePasswordInput.TextStyle = lipgloss.NewStyle().Foreground(colorText)
+	m.updatePasswordInput.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
+}
+
+func (m *Model) CycleTheme() {
+	m.themeIdx = (m.themeIdx + 1) % len(Themes)
+	m.ApplyCurrentTheme()
 }

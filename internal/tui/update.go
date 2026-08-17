@@ -98,20 +98,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyFilter()
 		syncCmd := m.syncCurrentPkgDetail()
 
-		// Cancel any running background sync and start a new worker for current manager
-		if m.syncCancel != nil {
-			m.syncCancel()
+		var waitCmd tea.Cmd
+		if m.syncChan == nil {
+			ctx, cancel := context.WithCancel(context.Background())
+			m.syncCancel = cancel
+			m.syncChan = make(chan syncProgressMsg, 32)
+			m.syncActive = true
+			go runAllManagersSyncWorker(ctx, m.aiSvc, m.cache, m.managers, m.syncChan)
+			waitCmd = waitForSyncProgress(m.syncChan)
 		}
-		ctx, cancel := context.WithCancel(context.Background())
-		m.syncCancel = cancel
-		m.syncChan = make(chan syncProgressMsg, 16)
-		m.syncActive = true
 
-		go runSyncWorker(ctx, m.aiSvc, m.cache, m.allPkgs, m.syncChan)
-		if syncCmd != nil {
-			return m, tea.Batch(syncCmd, waitForSyncProgress(m.syncChan))
+		if syncCmd != nil && waitCmd != nil {
+			return m, tea.Batch(syncCmd, waitCmd)
 		}
-		return m, waitForSyncProgress(m.syncChan)
+		if syncCmd != nil {
+			return m, syncCmd
+		}
+		if waitCmd != nil {
+			return m, waitCmd
+		}
+		return m, nil
 
 	case pkgDetailMsg:
 		if msg.err == nil && msg.pkg != nil {
@@ -126,7 +132,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case aiAnalysisMsg:
-		if m.selectedPkg != nil && (m.selectedPkg.Name+"@"+m.selectedPkg.Version) == msg.pkgKey {
+		if m.selectedPkg != nil && m.selectedPkg.Name == msg.pkgKey {
 			m.aiLoading = false
 			if msg.err != nil {
 				m.aiErr = "AI unavailable: " + msg.err.Error()
@@ -476,6 +482,11 @@ func (m Model) handleDetailKey(key string) (Model, tea.Cmd) {
 		return m, m.startOrphanRemoval()
 	case "i":
 		return m.startInstall()
+	case "t":
+		m.CycleTheme()
+		cmd := m.syncCurrentPkgDetail()
+		m.lastKey = ""
+		return m, cmd
 	case "u":
 		return m.startUpdate()
 	case "U":
@@ -514,6 +525,10 @@ func (m Model) handleSidebarKey(key string) (Model, tea.Cmd) {
 		return m, m.startOrphanRemoval()
 	case "i":
 		return m.startInstall()
+	case "t":
+		m.CycleTheme()
+		m.lastKey = ""
+		return m, nil
 	case "u", "U":
 		return m.startFullUpgrade()
 	case "l", "right", "enter":
@@ -634,12 +649,22 @@ func (m Model) handleListKey(key string) (Model, tea.Cmd) {
 		return m, cmd
 	case "r":
 		m.loading = true
+		if m.syncCancel != nil {
+			m.syncCancel()
+		}
+		m.syncChan = nil
+		m.syncActive = false
 		m.lastKey = ""
 		return m, loadPackages(m.managers[m.activeMgr])
 	case "o":
 		return m, m.startOrphanRemoval()
 	case "i":
 		return m.startInstall()
+	case "t":
+		m.CycleTheme()
+		cmd := m.syncCurrentPkgDetail()
+		m.lastKey = ""
+		return m, cmd
 	case "U":
 		return m.startFullUpgrade()
 	case "u":
@@ -787,7 +812,13 @@ func (m Model) buildDetailContent() string {
 			sb.WriteString(styleVerdict.Render(verdict) + "\n")
 		}
 		if command != "" {
-			sb.WriteString(styleAILabel.Render(command) + "\n")
+			cmdBadge := lipgloss.NewStyle().
+				Foreground(colorYellow).
+				Background(colorSurface).
+				Bold(true).
+				Padding(0, 1).
+				Render(command)
+			sb.WriteString("\n" + styleAILabel.Render("▶ Command: ") + cmdBadge + "\n")
 		}
 	default:
 		if m.syncActive {
@@ -1035,7 +1066,7 @@ func (m Model) handleInstallModalKey(key string, msg tea.KeyMsg) (Model, tea.Cmd
 		case "tab":
 			m.installShowDesc = true
 			pkg := m.installResults[m.installResultsCursor]
-			key := "summary@" + pkg.Name + "@" + pkg.Version
+			key := "summary@" + pkg.Name
 			if text, ok := m.cache.Get(key); ok {
 				m.installAIAnalysis = text
 			} else {
@@ -1157,7 +1188,7 @@ func searchPackagesCmd(mgr pm.Manager, query string) tea.Cmd {
 
 func installAIAnalyzeCmd(aiSvc *ai.Analyzer, c *cache.Cache, pkg *pm.Package) tea.Cmd {
 	return func() tea.Msg {
-		key := "summary@" + pkg.Name + "@" + pkg.Version
+		key := "summary@" + pkg.Name
 		if text, ok := c.Get(key); ok {
 			return installAIAnalysisMsg{pkgKey: key, text: text}
 		}
@@ -1206,22 +1237,108 @@ func installPackageCmdAsync(cmdArgs []string, password string, needsSudo bool) t
 }
 
 
+func stripMarkdown(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimLeft(s, "*#- >•\t")
+	s = strings.ReplaceAll(s, "**", "")
+	s = strings.ReplaceAll(s, "__", "")
+	return strings.TrimSpace(s)
+}
+
+func cleanCommand(raw string) string {
+	cmd := stripMarkdown(raw)
+	// Remove outer parentheses if any: e.g. "(Command: nvim)" -> "Command: nvim"
+	if strings.HasPrefix(cmd, "(") && strings.HasSuffix(cmd, ")") {
+		cmd = strings.TrimSpace(cmd[1 : len(cmd)-1])
+	}
+	// Strip known command prefixes
+	prefixes := []string{
+		"Command:", "command:",
+		"Launch Command:", "launch command:",
+		"Terminal Command:", "terminal command:",
+		"Launch with:", "launch with:",
+		"Run with:", "run with:",
+		"Run Command:", "run command:",
+		"Run:", "run:",
+		"Launch:", "launch:",
+		"Executable:", "executable:",
+	}
+	for _, p := range prefixes {
+		if strings.HasPrefix(cmd, p) {
+			cmd = strings.TrimSpace(cmd[len(p):])
+			break
+		}
+	}
+	// Strip backticks, quotes, parentheses, dashes
+	cmd = strings.Trim(cmd, " `\"'()-")
+	cmd = strings.TrimSpace(cmd)
+
+	// Filter out invalid/nil/none values
+	lower := strings.ToLower(cmd)
+	invalidTokens := map[string]bool{
+		"": true, "nil": true, "null": true, "none": true, "none.": true,
+		"n/a": true, "n/a.": true, "na": true, "not applicable": true,
+		"unknown": true, "-": true, "no command": true, "none (library)": true,
+		"none (daemon)": true, "none (service)": true,
+	}
+	if invalidTokens[lower] {
+		return ""
+	}
+	return cmd
+}
+
 func splitVerdict(text string) (string, string, string) {
 	lines := strings.Split(text, "\n")
 	var bodyLines []string
 	verdict := ""
 	command := ""
 
+	cmdPrefixes := []string{
+		"command:", "(command:",
+		"launch command:", "(launch command:",
+		"terminal command:", "(terminal command:",
+		"run command:", "(run command:",
+		"launch with:", "(launch with:",
+		"run with:", "(run with:",
+		"executable:", "(executable:",
+		"launch:", "(launch:",
+		"run:", "(run:",
+	}
+
 	for _, rawLine := range lines {
-		line := strings.TrimSpace(rawLine)
-		if strings.HasPrefix(line, "Verdict:") {
-			verdict = line
-		} else if strings.HasPrefix(line, "(Command:") {
-			command = line
-		} else {
+		cleaned := stripMarkdown(rawLine)
+		lower := strings.ToLower(cleaned)
+
+		if strings.HasPrefix(lower, "verdict:") {
+			// Check if command is embedded on the same line: e.g. "**Verdict:** [KEEP] (Command: nvim)"
+			if idx := strings.Index(cleaned, "("); idx != -1 && strings.Contains(strings.ToLower(cleaned[idx:]), "command:") {
+				cmdCandidate := cleaned[idx:]
+				verdict = strings.TrimSpace(cleaned[:idx])
+				if c := cleanCommand(cmdCandidate); c != "" {
+					command = c
+				}
+			} else {
+				verdict = cleaned
+			}
+			continue
+		}
+
+		isCmdLine := false
+		for _, p := range cmdPrefixes {
+			if strings.HasPrefix(lower, p) {
+				isCmdLine = true
+				if c := cleanCommand(cleaned); c != "" {
+					command = c
+				}
+				break
+			}
+		}
+
+		if !isCmdLine {
 			bodyLines = append(bodyLines, rawLine)
 		}
 	}
+
 	return strings.Join(bodyLines, "\n"), verdict, command
 }
 
@@ -1349,28 +1466,52 @@ func waitForSyncProgress(ch <-chan syncProgressMsg) tea.Cmd {
 	}
 }
 
-func runSyncWorker(ctx context.Context, aiSvc *ai.Analyzer, c *cache.Cache, pkgs []pm.Package, ch chan<- syncProgressMsg) {
+func runAllManagersSyncWorker(ctx context.Context, aiSvc *ai.Analyzer, c *cache.Cache, managers []pm.Manager, ch chan<- syncProgressMsg) {
 	defer close(ch)
 
-	var explicitPkgs []pm.Package
-	var explicitNames []string
+	type pkgItem struct {
+		pkg           pm.Package
+		explicitNames []string
+	}
 
-	for _, p := range pkgs {
-		if p.InstallReason == "Explicitly installed" {
-			explicitPkgs = append(explicitPkgs, p)
-			explicitNames = append(explicitNames, p.Name)
+	var allItems []pkgItem
+	var globalExplicitNames []string
+	seenPackages := make(map[string]bool)
+
+	for _, mgr := range managers {
+		pkgs, err := mgr.ListAll()
+		if err != nil {
+			continue
+		}
+		var mgrExplicitNames []string
+		var mgrExplicitPkgs []pm.Package
+		for _, p := range pkgs {
+			if p.InstallReason == "Explicitly installed" {
+				mgrExplicitPkgs = append(mgrExplicitPkgs, p)
+				mgrExplicitNames = append(mgrExplicitNames, p.Name)
+				if !seenPackages[p.Name] {
+					globalExplicitNames = append(globalExplicitNames, p.Name)
+					seenPackages[p.Name] = true
+				}
+			}
+		}
+		for _, p := range mgrExplicitPkgs {
+			allItems = append(allItems, pkgItem{
+				pkg:           p,
+				explicitNames: mgrExplicitNames,
+			})
 		}
 	}
 
-	total := len(explicitPkgs)
+	total := len(allItems)
 	if total == 0 {
 		ch <- syncProgressMsg{Total: 0, Done: 0, DoneAll: true}
 		return
 	}
 
 	doneCount := 0
-	for _, p := range explicitPkgs {
-		if c.Has(p.Name, p.Version) {
+	for _, it := range allItems {
+		if c.Has(it.pkg.Name, it.pkg.Version) {
 			doneCount++
 		}
 	}
@@ -1381,7 +1522,7 @@ func runSyncWorker(ctx context.Context, aiSvc *ai.Analyzer, c *cache.Cache, pkgs
 		return
 	}
 
-	for _, pkg := range explicitPkgs {
+	for _, it := range allItems {
 		select {
 		case <-ctx.Done():
 			return
@@ -1389,16 +1530,15 @@ func runSyncWorker(ctx context.Context, aiSvc *ai.Analyzer, c *cache.Cache, pkgs
 		}
 
 		// Re-check cache before fetching
-		if c.Has(pkg.Name, pkg.Version) {
+		if c.Has(it.pkg.Name, it.pkg.Version) {
 			continue
 		}
 
-		text, err := aiSvc.Analyze(ctx, &pkg, explicitNames)
+		text, err := aiSvc.Analyze(ctx, &it.pkg, globalExplicitNames)
 		if err == nil {
-			key := pkg.Name + "@" + pkg.Version
-			c.Set(key, text)
+			c.Set(it.pkg.Name, text)
 			doneCount++
-			ch <- syncProgressMsg{Total: total, Done: doneCount, PkgName: pkg.Name, DoneAll: doneCount == total}
+			ch <- syncProgressMsg{Total: total, Done: doneCount, PkgName: it.pkg.Name, DoneAll: doneCount == total}
 		}
 	}
 }

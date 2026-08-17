@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +14,8 @@ import (
 
 // entry point and app loop
 func main() {
-	loadEnv()
+	loadConfig()
+
 	m := tui.New()
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
@@ -24,21 +24,43 @@ func main() {
 	}
 }
 
-// Env loading code
-func loadEnv() {
-	exe, err := os.Executable()
+// Config loading code supporting standard Linux config paths
+func loadConfig() {
+	var candidatePaths []string
+
+	// 1. Current working directory .env
+	candidatePaths = append(candidatePaths, ".env")
+
+	// 2. XDG Config directory: ~/.config/pacseer/config.env and ~/.config/pacseer/.env
+	if configDir, err := os.UserConfigDir(); err == nil {
+		candidatePaths = append(candidatePaths,
+			filepath.Join(configDir, "pacseer", "config.env"),
+			filepath.Join(configDir, "pacseer", ".env"),
+			filepath.Join(configDir, "pacseer", "config"),
+		)
+	}
+
+	// 3. User Home directory: ~/.pacseer.env
+	if homeDir, err := os.UserHomeDir(); err == nil {
+		candidatePaths = append(candidatePaths, filepath.Join(homeDir, ".pacseer.env"))
+	}
+
+	// 4. Executable directory .env
+	if exe, err := os.Executable(); err == nil {
+		candidatePaths = append(candidatePaths, filepath.Join(filepath.Dir(exe), ".env"))
+	}
+
+	for _, p := range candidatePaths {
+		loadFileEnv(p)
+	}
+}
+
+func loadFileEnv(path string) {
+	f, err := os.Open(path)
 	if err != nil {
 		return
 	}
-	f, err := os.Open(filepath.Join(filepath.Dir(exe), ".env"))
-	if err != nil {
-		return
-	}
-	defer func() {
-		if err := f.Close(); err != nil {
-			log.Fatal(err)
-		}
-	}()
+	defer f.Close()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -52,10 +74,9 @@ func loadEnv() {
 		}
 		key = strings.TrimSpace(key)
 		val = strings.TrimSpace(val)
+		val = strings.Trim(val, `"'`)
 		if os.Getenv(key) == "" {
-			if err := os.Setenv(key, val); err != nil {
-				log.Fatal(err)
-			}
+			_ = os.Setenv(key, val)
 		}
 	}
 }

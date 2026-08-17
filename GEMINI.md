@@ -133,9 +133,9 @@ Helper methods: `SizeMB() float64`, `FormatSize() string` (human-readable: B/KiB
 
 ### 3. AI Analysis (`internal/ai/analyzer.go`)
 
-- Uses **Groq API** at `https://api.groq.com/openai/v1/chat/completions`.
-- Default model: `openai/gpt-oss-120b` (configurable via `ORPHEUS_MODEL` env var).
-- API key read from `GROQ_API_KEY` env var.
+- Supports **Gemini** (`gemini-2.5-flash`), **Groq** (`openai/gpt-oss-120b`), **OpenAI** (`gpt-4o-mini`), and **Anthropic** (`claude-3-5-haiku-latest`).
+- **Automatic Provider Detection**: Detects provider from whichever API key is set (`GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`).
+- Model configurable via `PACSEER_MODEL` (or `ORPHEUS_MODEL`).
 - HTTP client with 30s timeout.
 - **Singleflight Concurrency**: Collapses concurrent identical requests into a single in-flight call using `singleflightGroup`.
 - **Circuit Breaker**: 30-second cooldown on HTTP 429 rate limits (`rateLimitedUntil`).
@@ -175,6 +175,7 @@ Helper methods: `SizeMB() float64`, `FormatSize() string` (human-readable: B/KiB
 | `o` | Global | Check and batch-clean orphan packages |
 | `/` | List | Filter installed packages |
 | `s` | List | Cycle sort: Name → Size → Date |
+| `t` | Global / List / Detail | Cycle theme: **Gruvbox Retro → Catppuccin → Monokai** |
 | `r` | List | Reload package list |
 | `q` | Global | Quit Pacseer |
 
@@ -189,6 +190,21 @@ Helper methods: `SizeMB() float64`, `FormatSize() string` (human-readable: B/KiB
 2. **Full Upgrade & Package Update Modal (`U` / `u`)**: Password prompt for sudo managers, execution spinner, and real-time scrollable output log.
 3. **Orphan Cleanup Modal (`o`)**: Scans `pacman -Qtdq`, displays count, prompts for password, and uninstalls orphans.
 4. **Package Removal Flow (`x`)**: In-detail password prompt rendered at the top of the panel with live asterisk feedback and automatic cleanup.
+
+---
+
+## Configuration
+
+Pacseer loads configuration and API keys from `~/.config/pacseer/config.env` (or `~/.config/pacseer/.env`, `./.env`, `~/.pacseer.env`).
+
+Example `~/.config/pacseer/config.env`:
+```env
+# Google Gemini (Free tier at https://aistudio.google.com)
+GEMINI_API_KEY=AIzaSy...
+
+# Optional: Model override
+# PACSEER_MODEL=gemini-2.5-flash
+```
 
 ---
 

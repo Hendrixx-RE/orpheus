@@ -96,6 +96,7 @@ Pacseer uses intuitive **vim-style keybindings** throughout. The status bar at t
 | `v` | Visual range selection mode |
 | `/` | Live filter / search installed packages |
 | `s` | Cycle sort: **Name → Size → Install Date** |
+| `t` | Cycle theme: **Gruvbox Retro → Catppuccin → Monokai** |
 | `r` | Reload package list from active manager |
 
 ### Package Actions
@@ -129,26 +130,25 @@ go build -o pacseer .
 
 ### Configuration
 
-Create a `.env` file in the project directory (or in the same directory as the `pacseer` binary):
-
-```env
-GROQ_API_KEY=your_groq_api_key_here
-# Optional custom model (defaults to openai/gpt-oss-120b)
-# ORPHEUS_MODEL=openai/gpt-oss-120b
-```
-
-#### Get a Free Groq API Key:
-1. Visit [console.groq.com](https://console.groq.com).
-2. Create a free account and generate an API key.
-3. Add the key to your `.env` file.
-
-### Run
+Configure your AI keys and model in `~/.config/pacseer/config.env` (or `~/.config/pacseer/.env`):
 
 ```bash
-./pacseer
+mkdir -p ~/.config/pacseer
 ```
 
-> **Note:** Pacseer automatically resolves `.env` relative to the executable binary location, so you can symlink or move the binary anywhere (e.g. `~/.local/bin/pacseer`).
+Create `~/.config/pacseer/config.env`:
+
+```env
+# Pacseer auto-detects whichever provider key is present!
+# Option 1: Google Gemini (Recommended - Free tier at https://aistudio.google.com)
+GEMINI_API_KEY=AIzaSy...your_key_here
+
+# Option 2: Groq (Free tier at https://console.groq.com)
+# GROQ_API_KEY=your_groq_key_here
+
+# Optional: Override the model (defaults to gemini-2.5-flash for Gemini, openai/gpt-oss-120b for Groq)
+# PACSEER_MODEL=gemini-2.5-flash
+```
 
 ---
 

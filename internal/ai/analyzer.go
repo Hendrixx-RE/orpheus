@@ -56,13 +56,12 @@ func (g *singleflightGroup) Do(key string, fn func() (string, error)) (string, e
 const (
 	defaultGroqModel      = "openai/gpt-oss-120b"
 	defaultOpenAIModel    = "gpt-4o-mini"
-	defaultGeminiModel    = "gemini-1.5-flash"
+	defaultGeminiModel    = "gemini-3.5-flash-lite"
 	defaultAnthropicModel = "claude-3-5-haiku-latest"
-
-	groqEndpoint      = "https://api.groq.com/openai/v1/chat/completions"
-	openAIEndpoint    = "https://api.openai.com/v1/chat/completions"
-	geminiEndpoint    = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-	anthropicEndpoint = "https://api.anthropic.com/v1/messages"
+	groqEndpoint          = "https://api.groq.com/openai/v1/chat/completions"
+	openAIEndpoint        = "https://api.openai.com/v1/chat/completions"
+	geminiEndpoint        = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+	anthropicEndpoint     = "https://api.anthropic.com/v1/messages"
 )
 
 type Provider string
@@ -87,10 +86,32 @@ type Analyzer struct {
 	minInterval      time.Duration
 }
 
+func getEnv(keys ...string) string {
+	for _, k := range keys {
+		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func New() *Analyzer {
-	providerStr := strings.ToLower(os.Getenv("ORPHEUS_PROVIDER"))
+	providerStr := strings.ToLower(getEnv("PACSEER_PROVIDER", "ORPHEUS_PROVIDER"))
+
+	// Auto-detect provider if not explicitly configured
 	if providerStr == "" {
-		providerStr = "groq"
+		switch {
+		case getEnv("GEMINI_API_KEY") != "":
+			providerStr = "gemini"
+		case getEnv("GROQ_API_KEY") != "":
+			providerStr = "groq"
+		case getEnv("OPENAI_API_KEY") != "":
+			providerStr = "openai"
+		case getEnv("ANTHROPIC_API_KEY") != "":
+			providerStr = "anthropic"
+		default:
+			providerStr = "gemini"
+		}
 	}
 
 	a := &Analyzer{
@@ -98,21 +119,21 @@ func New() *Analyzer {
 		client:   &http.Client{Timeout: 30 * time.Second},
 	}
 
-	model := os.Getenv("ORPHEUS_MODEL")
+	model := getEnv("PACSEER_MODEL", "ORPHEUS_MODEL")
 
 	var defaultInterval time.Duration
 	switch a.provider {
 	case Gemini:
 		a.endpoint = geminiEndpoint
-		a.apiKey = os.Getenv("GEMINI_API_KEY")
+		a.apiKey = getEnv("GEMINI_API_KEY")
 		a.model = model
 		if a.model == "" {
 			a.model = defaultGeminiModel
 		}
-		defaultInterval = 4500 * time.Millisecond // 15 RPM
+		defaultInterval = 4000 * time.Millisecond // 15 RPM
 	case OpenAI:
 		a.endpoint = openAIEndpoint
-		a.apiKey = os.Getenv("OPENAI_API_KEY")
+		a.apiKey = getEnv("OPENAI_API_KEY")
 		a.model = model
 		if a.model == "" {
 			a.model = defaultOpenAIModel
@@ -120,7 +141,7 @@ func New() *Analyzer {
 		defaultInterval = 2500 * time.Millisecond
 	case Anthropic:
 		a.endpoint = anthropicEndpoint
-		a.apiKey = os.Getenv("ANTHROPIC_API_KEY")
+		a.apiKey = getEnv("ANTHROPIC_API_KEY")
 		a.model = model
 		if a.model == "" {
 			a.model = defaultAnthropicModel
@@ -129,7 +150,7 @@ func New() *Analyzer {
 	default:
 		a.provider = Groq
 		a.endpoint = groqEndpoint
-		a.apiKey = os.Getenv("GROQ_API_KEY")
+		a.apiKey = getEnv("GROQ_API_KEY")
 		a.model = model
 		if a.model == "" {
 			a.model = defaultGroqModel
@@ -137,7 +158,7 @@ func New() *Analyzer {
 		defaultInterval = 2500 * time.Millisecond // 30 RPM
 	}
 
-	if delayEnv := os.Getenv("ORPHEUS_RATE_LIMIT_DELAY"); delayEnv != "" {
+	if delayEnv := getEnv("PACSEER_RATE_LIMIT_DELAY", "ORPHEUS_RATE_LIMIT_DELAY"); delayEnv != "" {
 		if d, err := time.ParseDuration(delayEnv); err == nil && d > 0 {
 			defaultInterval = d
 		}
@@ -157,7 +178,7 @@ func (a *Analyzer) Analyze(ctx context.Context, pkg *pm.Package, explicitNames [
 		return "", fmt.Errorf("%s API key not set in .env", strings.ToUpper(string(a.provider)))
 	}
 
-	key := pkg.Name + "@" + pkg.Version
+	key := pkg.Name
 	return a.sf.Do(key, func() (string, error) {
 		// Wait for rate limit / safe delay before making the call
 		if err := a.waitRateLimit(ctx); err != nil {
@@ -214,7 +235,7 @@ func (a *Analyzer) AnalyzeSummary(ctx context.Context, pkg *pm.Package) (string,
 		return "", fmt.Errorf("%s API key not set in .env", strings.ToUpper(string(a.provider)))
 	}
 
-	key := "summary@" + pkg.Name + "@" + pkg.Version
+	key := "summary@" + pkg.Name
 	return a.sf.Do(key, func() (string, error) {
 		if err := a.waitRateLimit(ctx); err != nil {
 			return "", err
@@ -224,7 +245,7 @@ func (a *Analyzer) AnalyzeSummary(ctx context.Context, pkg *pm.Package) (string,
 		userPrompt := fmt.Sprintf("Describe this software in 1-2 sentences:\nPackage: %s %s\nRepository info: %s",
 			pkg.Name, pkg.Version, pkg.Description)
 
-		res, err := a.sendChatRequest(ctx, systemPrompt, userPrompt, 500)
+		res, err := a.sendChatRequest(ctx, systemPrompt, userPrompt, 1024)
 
 		a.mu.Lock()
 		a.lastReqTime = time.Now()
@@ -240,7 +261,7 @@ func (a *Analyzer) AnalyzeSummary(ctx context.Context, pkg *pm.Package) (string,
 func (a *Analyzer) analyzeUncached(ctx context.Context, pkg *pm.Package, explicitNames []string) (string, error) {
 	systemPrompt := "You are a Linux package analyzer. Give concise, honest analysis. No markdown headers or bullet points. Plain text only."
 	userPrompt := buildPrompt(pkg, explicitNames)
-	return a.sendChatRequest(ctx, systemPrompt, userPrompt, 800)
+	return a.sendChatRequest(ctx, systemPrompt, userPrompt, 2048)
 }
 
 func (a *Analyzer) sendChatRequest(ctx context.Context, systemPrompt, userPrompt string, maxTokens int) (string, error) {
@@ -367,7 +388,6 @@ func retryAfterDelay(resp *http.Response, fallback time.Duration) time.Duration 
 	return delay
 }
 
-
 func extractContent(data []byte, provider Provider) (string, error) {
 	if provider == Anthropic {
 		var resp struct {
@@ -462,7 +482,10 @@ func buildPrompt(pkg *pm.Package, explicitNames []string) string {
 1. Its purpose on this system
 2. Why the user might have installed this specific package, given the other explicit packages on their system
 3. What would happen if the user removed this package
-4. The exact terminal command to launch this package. End your response with a new line containing exactly: (Command: <command>)
+4. If this package is an executable tool/application with a terminal command (e.g. nvim, btop, git), add a final new line:
+   Command: <command_name>
+   (If it is a library, daemon, header, or has no direct launch command, omit the Command line completely. Do NOT output 'nil' or 'none'.)
+
 Package: %s %s
 Description: %s
 Install reason: %s

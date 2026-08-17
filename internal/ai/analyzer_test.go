@@ -85,3 +85,32 @@ func TestRetryAfterDelayFloor(t *testing.T) {
 		t.Fatalf("expected delay floor >= 3s, got %v", delay)
 	}
 }
+
+func TestProviderAutoDetection(t *testing.T) {
+	t.Setenv("PACSEER_PROVIDER", "")
+	t.Setenv("ORPHEUS_PROVIDER", "")
+	t.Setenv("GROQ_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+
+	// Test Gemini detection
+	t.Setenv("GEMINI_API_KEY", "test-gemini-key")
+	a := New()
+	if a.provider != Gemini {
+		t.Errorf("expected Gemini provider, got %s", a.provider)
+	}
+	if a.model != defaultGeminiModel {
+		t.Errorf("expected default Gemini model %s, got %s", defaultGeminiModel, a.model)
+	}
+
+	// Test Groq detection
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("GROQ_API_KEY", "test-groq-key")
+	a = New()
+	if a.provider != Groq {
+		t.Errorf("expected Groq provider, got %s", a.provider)
+	}
+	if a.model != defaultGroqModel {
+		t.Errorf("expected default Groq model %s, got %s", defaultGroqModel, a.model)
+	}
+}
