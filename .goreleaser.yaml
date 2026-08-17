@@ -1,15 +1,15 @@
 version: 2
 
-project_name: orpheus
+project_name: pacseer
 
 before:
   hooks:
     - go mod tidy
 
 builds:
-  - id: orpheus
+  - id: pacseer
     main: .
-    binary: orpheus
+    binary: pacseer
     env:
       - CGO_ENABLED=0
     goos:

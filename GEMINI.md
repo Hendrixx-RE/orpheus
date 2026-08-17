@@ -11,12 +11,12 @@
 | Key | Value |
 |---|---|
 | Language | Go 1.26 |
-| Module | `orpheus` |
+| Module | `pacseer` |
 | TUI Framework | [Bubble Tea](https://github.com/charmbracelet/bubbletea) + [Lip Gloss](https://github.com/charmbracelet/lipgloss) + [Bubbles](https://github.com/charmbracelet/bubbles) |
 | AI Backend | Groq API (Llama 3.3 70B) via OpenAI-compatible REST endpoint |
 | Config | `.env` file with `GROQ_API_KEY` (and optional `ORPHEUS_MODEL`) |
-| Cache | `~/.cache/orpheus/analysis.json` |
-| Binary | `orpheus` (built with `go build`) |
+| Cache | `~/.cache/pacseer/analysis.json` |
+| Binary | `pacseer` (built with `go build`) |
 | Target OS | Linux (Arch-based, uses `pacman`) |
 | Optional Deps | `yay` or `paru` (for AUR search, install & upgrade support), `flatpak` |
 | Theme | Gruvbox Dark |
@@ -26,7 +26,7 @@
 ## Directory Structure
 
 ```
-orpheus/
+pacseer/
 ├── main.go                  # Entry point — loads .env, starts Bubble Tea program
 ├── go.mod / go.sum          # Module definition and dependency lock
 ├── .env                     # GROQ_API_KEY (not committed)
@@ -151,7 +151,7 @@ Helper methods: `SizeMB() float64`, `FormatSize() string` (human-readable: B/KiB
 ### 4. Cache (`internal/cache/cache.go`)
 
 - Thread-safe via `sync.RWMutex`.
-- Path: `~/.cache/orpheus/analysis.json`.
+- Path: `~/.cache/pacseer/analysis.json`.
 - `GetPackage(name, version)`: Checks both `"name@version"` and `"name"` fallback.
 - `Has(name, version)`: Returns true if the package analysis exists in cache under either format.
 - `Set(key, value)`: Inserts and persists indented JSON.
@@ -171,7 +171,7 @@ Helper methods: `SizeMB() float64`, `FormatSize() string` (human-readable: B/KiB
 | `x` | List / Detail | Remove highlighted or multi-selected package(s) |
 | `i` | Global | Open package search & installation modal |
 | `u` | List / Detail | Update selected package(s) |
-| `U` | List / Detail / Sidebar | **Full Upgrade** for the active package manager |
+| `U` | List / Detail / Sidebar / Global | **Full System Upgrade** across all detected package managers (Pacman, AUR, Flatpak) |
 | `o` | Global | Check and batch-clean orphan packages |
 | `/` | List | Filter installed packages |
 | `s` | List | Cycle sort: Name → Size → Date |
@@ -199,8 +199,8 @@ Helper methods: `SizeMB() float64`, `FormatSize() string` (human-readable: B/KiB
 go test -v ./...
 
 # Build binary
-go build -o orpheus .
+go build -o pacseer .
 
 # Run
-./orpheus
+./pacseer
 ```

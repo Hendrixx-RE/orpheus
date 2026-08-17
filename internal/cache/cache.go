@@ -20,7 +20,7 @@ func New() (*Cache, error) {
 	if err != nil {
 		dir = os.TempDir()
 	}
-	dir = filepath.Join(dir, "orpheus")
+	dir = filepath.Join(dir, "pacseer")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}

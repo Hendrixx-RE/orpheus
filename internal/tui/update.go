@@ -6,9 +6,9 @@ import (
 	"strings"
 	"context"
 
-	"orpheus/internal/ai"
-	"orpheus/internal/cache"
-	"orpheus/internal/pm"
+	"pacseer/internal/ai"
+	"pacseer/internal/cache"
+	"pacseer/internal/pm"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -476,6 +476,8 @@ func (m Model) handleDetailKey(key string) (Model, tea.Cmd) {
 		return m, m.startOrphanRemoval()
 	case "i":
 		return m.startInstall()
+	case "u":
+		return m.startUpdate()
 	case "U":
 		return m.startFullUpgrade()
 	case "tab":
@@ -1420,25 +1422,31 @@ func (m Model) startFullUpgrade() (Model, tea.Cmd) {
 	}
 	m = m.resetUpdateModal()
 	m.updatingModal = true
-	m.updateTargets = nil // nil = full system/manager upgrade
-	activeMgr := m.managers[m.activeMgr]
+	m.updateTargets = nil // nil = full system upgrade across all managers
 
 	const modalW = 76
 	const innerW = modalW - 8 - 2
 	m.updateOutputVP.Width = innerW
 	m.updateOutputVP.Height = 10
 
-	if activeMgr.RequiresSudo() {
+	needsSudo := false
+	for _, mgr := range m.managers {
+		if mgr.RequiresSudo() {
+			needsSudo = true
+			break
+		}
+	}
+
+	if needsSudo {
 		m.updateAskPassword = true
 		m.updatePasswordInput.Focus()
 		m.updatePasswordInput.SetValue("")
 		return m, textinput.Blink
 	}
 
-	// Flatpak: run directly without password
+	// No manager requires sudo: run directly
 	m.updatingLoading = true
-	cmdArgs := activeMgr.UpdateCmd()
-	return m, updatePackageCmdAsync(cmdArgs, "", false)
+	return m, updateAllManagersCmdAsync(m.managers, "", false)
 }
 
 func (m Model) startUpdate() (Model, tea.Cmd) {
@@ -1467,7 +1475,7 @@ func (m Model) startUpdate() (Model, tea.Cmd) {
 		return m, textinput.Blink
 	}
 
-	// Flatpak: run directly without password
+	// Flatpak / non-sudo: run directly without password
 	m.updatingLoading = true
 	cmdArgs := activeMgr.UpdatePackagesCmd(m.updateTargets)
 	return m, updatePackageCmdAsync(cmdArgs, "", false)
@@ -1490,14 +1498,14 @@ func (m Model) handleUpdateModalKey(key string, msg tea.KeyMsg) (Model, tea.Cmd)
 			m.updatePasswordInput.Blur()
 			m.updatePasswordInput.SetValue("")
 
-			activeMgr := m.managers[m.activeMgr]
-			var cmdArgs []string
 			if len(m.updateTargets) > 0 {
-				cmdArgs = activeMgr.UpdatePackagesCmd(m.updateTargets)
-			} else {
-				cmdArgs = activeMgr.UpdateCmd()
+				activeMgr := m.managers[m.activeMgr]
+				cmdArgs := activeMgr.UpdatePackagesCmd(m.updateTargets)
+				return m, updatePackageCmdAsync(cmdArgs, pw, activeMgr.RequiresSudo())
 			}
-			return m, updatePackageCmdAsync(cmdArgs, pw, true)
+
+			// Full system upgrade across ALL managers
+			return m, updateAllManagersCmdAsync(m.managers, pw, true)
 		default:
 			var cmd tea.Cmd
 			m.updatePasswordInput, cmd = m.updatePasswordInput.Update(msg)
@@ -1574,5 +1582,77 @@ func updatePackageCmdAsync(cmdArgs []string, password string, needsSudo bool) te
 			return pkgUpdateOutputMsg{err: fmt.Errorf("%v: %s", err, out), output: string(out)}
 		}
 		return pkgUpdateOutputMsg{err: nil, output: string(out)}
+	}
+}
+
+func updateAllManagersCmdAsync(managers []pm.Manager, password string, needsSudo bool) tea.Cmd {
+	return func() tea.Msg {
+		if needsSudo {
+			// Invalidate cached credentials so password is strictly checked
+			_ = exec.Command("sudo", "-k").Run()
+
+			vCmd := exec.Command("sudo", "-S", "-v")
+			vCmd.Stdin = strings.NewReader(password + "\n")
+			if vOut, err := vCmd.CombinedOutput(); err != nil {
+				return pkgUpdateOutputMsg{
+					err:    fmt.Errorf("incorrect sudo password: %s", strings.TrimSpace(string(vOut))),
+					output: string(vOut),
+				}
+			}
+		}
+
+		var fullOutput strings.Builder
+		var lastErr error
+
+		for i, mgr := range managers {
+			mgrName := mgrDisplayName(mgr.Name())
+			fullOutput.WriteString(fmt.Sprintf("=== [%d/%d] Upgrading %s ===\n", i+1, len(managers), mgrName))
+
+			cmdArgs := mgr.UpdateCmd()
+			if len(cmdArgs) == 0 {
+				fullOutput.WriteString("No update command available.\n\n")
+				continue
+			}
+
+			var c *exec.Cmd
+			if mgr.RequiresSudo() {
+				if cmdArgs[0] == "pacman" {
+					args := append([]string{"-S"}, cmdArgs...)
+					c = exec.Command("sudo", args...)
+					c.Stdin = strings.NewReader(password + "\n")
+				} else {
+					// yay / paru: credentials are cached via sudo -v above
+					c = exec.Command(cmdArgs[0], cmdArgs[1:]...)
+				}
+			} else {
+				c = exec.Command(cmdArgs[0], cmdArgs[1:]...)
+			}
+
+			out, err := c.CombinedOutput()
+			if len(out) > 0 {
+				fullOutput.Write(out)
+				if out[len(out)-1] != '\n' {
+					fullOutput.WriteByte('\n')
+				}
+			}
+			fullOutput.WriteString("\n")
+
+			if err != nil {
+				lastErr = fmt.Errorf("%s upgrade failed: %v", mgrName, err)
+			}
+		}
+
+		if lastErr != nil {
+			return pkgUpdateOutputMsg{
+				err:    lastErr,
+				output: strings.TrimSpace(fullOutput.String()),
+			}
+		}
+
+		fullOutput.WriteString("✓ Full system upgrade completed across all managers!\n")
+		return pkgUpdateOutputMsg{
+			err:    nil,
+			output: strings.TrimSpace(fullOutput.String()),
+		}
 	}
 }

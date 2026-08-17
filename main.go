@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"orpheus/internal/tui"
+	"pacseer/internal/tui"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"orpheus/internal/pm"
+	"pacseer/internal/pm"
 )
 
 type pkgsLoadedMsg struct {

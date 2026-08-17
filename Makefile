@@ -1,6 +1,6 @@
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
-BINARY = orpheus
+BINARY = pacseer
 
 .PHONY: all build test clean install uninstall run
 

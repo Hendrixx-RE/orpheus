@@ -1,10 +1,10 @@
-# Maintainer: Orpheus Maintainers <maintainers@orpheus.local>
-pkgname=orpheus-git
+# Maintainer: Orpheus Maintainers <maintainers@pacseer.local>
+pkgname=pacseer-git
 pkgver=0.1.0
 pkgrel=1
 pkgdesc="A terminal-based package management dashboard for Arch Linux"
 arch=('x86_64' 'aarch64')
-url="https://github.com/Hendrixx-RE/orpheus"
+url="https://github.com/Hendrixx-RE/pacseer"
 license=('MIT')
 depends=('glibc' 'pacman')
 optdepends=(
@@ -13,31 +13,31 @@ optdepends=(
     'flatpak: Flatpak application management'
 )
 makedepends=('go' 'git')
-provides=('orpheus')
-conflicts=('orpheus' 'orpheus-bin')
-source=("git+https://github.com/Hendrixx-RE/orpheus.git")
+provides=('pacseer')
+conflicts=('pacseer' 'pacseer-bin')
+source=("git+https://github.com/Hendrixx-RE/pacseer.git")
 sha256sums=('SKIP')
 
 pkgver() {
-    cd "$srcdir/orpheus"
+    cd "$srcdir/pacseer"
     git describe --long --tags 2>/dev/null | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' || printf "0.1.0.r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
 }
 
 build() {
-    cd "$srcdir/orpheus"
+    cd "$srcdir/pacseer"
     export CGO_ENABLED=0
     export GOFLAGS="-buildmode=pie -trimpath -modcacherw"
-    go build -ldflags="-s -w -X main.version=$pkgver" -o orpheus .
+    go build -ldflags="-s -w -X main.version=$pkgver" -o pacseer .
 }
 
 check() {
-    cd "$srcdir/orpheus"
+    cd "$srcdir/pacseer"
     go test ./...
 }
 
 package() {
-    cd "$srcdir/orpheus"
-    install -Dm755 orpheus "$pkgdir/usr/bin/orpheus"
+    cd "$srcdir/pacseer"
+    install -Dm755 pacseer "$pkgdir/usr/bin/pacseer"
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 }

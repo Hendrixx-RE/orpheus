@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"orpheus/internal/pm"
+	"pacseer/internal/pm"
 )
 
 func TestAnalyzerSingleflightDeduplication(t *testing.T) {

@@ -68,7 +68,7 @@ Press `a` on any package and Orpheus leverages Groq (Llama 3.3 70B) to deliver c
 - `x`: Batch uninstall all selected packages in a single privileged `sudo` transaction.
 
 ###  Persistent Cache
-Analysis results are saved locally to `~/.cache/orpheus/analysis.json` in clean, human-readable JSON. Analyze once, read instantly forever.
+Analysis results are saved locally to `~/.cache/pacseer/analysis.json` in clean, human-readable JSON. Analyze once, read instantly forever.
 
 ---
 
@@ -105,7 +105,7 @@ Orpheus uses intuitive **vim-style keybindings** throughout. The status bar at t
 | `x` | Remove highlighted or multi-selected packages |
 | `i` | Open Package Search & Install modal (Official repos, AUR, Flatpak) |
 | `u` | Update highlighted or selected package(s) |
-| `U` | **Full Upgrade** for the active package manager (`yay -Syu` / `flatpak update`) |
+| `U` | **Full System Upgrade** across all detected package managers (Pacman + AUR + Flatpak) |
 | `o` | Orphan packages inspection and cleanup |
 
 ---
@@ -122,14 +122,14 @@ Orpheus uses intuitive **vim-style keybindings** throughout. The status bar at t
 ### Build from Source
 
 ```bash
-git clone https://github.com/your-username/orpheus.git
-cd orpheus
-go build -o orpheus .
+git clone https://github.com/your-username/pacseer.git
+cd pacseer
+go build -o pacseer .
 ```
 
 ### Configuration
 
-Create a `.env` file in the project directory (or in the same directory as the `orpheus` binary):
+Create a `.env` file in the project directory (or in the same directory as the `pacseer` binary):
 
 ```env
 GROQ_API_KEY=your_groq_api_key_here
@@ -145,17 +145,17 @@ GROQ_API_KEY=your_groq_api_key_here
 ### Run
 
 ```bash
-./orpheus
+./pacseer
 ```
 
-> **Note:** Orpheus automatically resolves `.env` relative to the executable binary location, so you can symlink or move the binary anywhere (e.g. `~/.local/bin/orpheus`).
+> **Note:** Orpheus automatically resolves `.env` relative to the executable binary location, so you can symlink or move the binary anywhere (e.g. `~/.local/bin/pacseer`).
 
 ---
 
 ##  Architecture
 
 ```
-orpheus/
+pacseer/
 ├── main.go                  # Entry point — loads .env, initializes Bubble Tea program
 ├── go.mod / go.sum          # Module dependencies
 ├── .env                     # API configuration (ignored in git)

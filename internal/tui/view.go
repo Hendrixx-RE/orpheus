@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"orpheus/internal/pm"
+	"pacseer/internal/pm"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -137,12 +137,18 @@ func (m Model) renderUpdateModal() string {
 	modalW := minI(76, maxI(36, m.width-4))
 	innerW := modalW - 8 - 2
 
+	var allMgrNames []string
+	for _, mgr := range m.managers {
+		allMgrNames = append(allMgrNames, mgrDisplayName(mgr.Name()))
+	}
+	allMgrsStr := strings.Join(allMgrNames, " + ")
+
 	var sb strings.Builder
 	title := "Update Packages"
 	if len(m.updateTargets) > 0 {
 		title = fmt.Sprintf("Update %d Package(s) — %s", len(m.updateTargets), mgrTitle)
 	} else {
-		title = "Full Upgrade — " + mgrTitle
+		title = "Full System Upgrade (All Managers)"
 	}
 	sb.WriteString(styleTitle.Render(title) + "\n")
 	sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n\n")
@@ -170,7 +176,8 @@ func (m Model) renderUpdateModal() string {
 		if len(m.updateTargets) > 0 {
 			renderTargetList()
 		} else {
-			sb.WriteString(styleVal.Render(fmt.Sprintf("Ready to upgrade all system packages via %s.", mgrTitle)) + "\n\n")
+			sb.WriteString(styleVal.Render("Ready to perform a full system upgrade across all package managers:\n") +
+				styleAILabel.Render("  "+allMgrsStr) + "\n\n")
 		}
 		sb.WriteString(styleAILabel.Render("sudo password") + "\n")
 		sb.WriteString(m.updatePasswordInput.View() + "\n\n")
@@ -181,7 +188,7 @@ func (m Model) renderUpdateModal() string {
 		if len(m.updateTargets) > 0 {
 			sb.WriteString(m.spinner.View() + " " + styleDimmed.Render(fmt.Sprintf("Updating %d package(s) via %s...", len(m.updateTargets), mgrTitle)) + "\n\n")
 		} else {
-			sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Upgrading packages via "+mgrTitle+"...") + "\n\n")
+			sb.WriteString(m.spinner.View() + " " + styleDimmed.Render("Upgrading all packages across all managers...") + "\n\n")
 		}
 		sb.WriteString(styleDimmed.Render("Please wait, resolving dependencies and applying updates..."))
 
@@ -675,7 +682,7 @@ func (m Model) renderStatusBar() string {
 		hints = []string{
 			styleKey.Render("j/k") + " move",
 			styleKey.Render("l/Enter") + " list",
-			styleKey.Render("u/U") + " upgrade",
+			styleKey.Render("U") + " upgrade all",
 			styleKey.Render("i") + " install",
 			styleKey.Render("o") + " orphans",
 			styleKey.Render("q") + " quit",

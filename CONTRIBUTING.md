@@ -13,8 +13,8 @@ First off, thank you for considering contributing to Orpheus! 🎉
 
 ```bash
 # Clone the repository
-git clone https://github.com/Hendrixx-RE/orpheus.git
-cd orpheus
+git clone https://github.com/Hendrixx-RE/pacseer.git
+cd pacseer
 
 # Build binary
 make build
@@ -23,7 +23,7 @@ make build
 make test
 
 # Launch Orpheus
-./orpheus
+./pacseer
 ```
 
 ## Project Structure

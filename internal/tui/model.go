@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"orpheus/internal/ai"
-	"orpheus/internal/cache"
-	"orpheus/internal/pm"
+	"pacseer/internal/ai"
+	"pacseer/internal/cache"
+	"pacseer/internal/pm"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
