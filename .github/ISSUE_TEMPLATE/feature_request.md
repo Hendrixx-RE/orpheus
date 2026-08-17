@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an idea or new package manager support for Orpheus
+about: Suggest an idea or new package manager support for Pacseer
 title: '[FEATURE] '
 labels: enhancement
 assignees: ''

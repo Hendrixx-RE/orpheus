@@ -1,6 +1,6 @@
-# Contributing to Orpheus
+# Contributing to Pacseer
 
-First off, thank you for considering contributing to Orpheus! 🎉
+First off, thank you for considering contributing to Pacseer! 🎉
 
 ## Development Setup
 
@@ -22,7 +22,7 @@ make build
 # Run unit tests
 make test
 
-# Launch Orpheus
+# Launch Pacseer
 ./pacseer
 ```
 

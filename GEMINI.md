@@ -1,6 +1,6 @@
-# Orpheus — Project Reference for AI Agents
+# Pacseer — Project Reference for AI Agents
 
-> **Orpheus** is a terminal-based (TUI) package management dashboard for Arch Linux.
+> **Pacseer** is a terminal-based (TUI) package management dashboard for Arch Linux.
 > It lets users browse, inspect, AI-analyze, search, install, update, and batch-uninstall packages from multiple
 > package managers (Pacman/AUR, Flatpak) in a single unified interface.
 
@@ -176,7 +176,7 @@ Helper methods: `SizeMB() float64`, `FormatSize() string` (human-readable: B/KiB
 | `/` | List | Filter installed packages |
 | `s` | List | Cycle sort: Name → Size → Date |
 | `r` | List | Reload package list |
-| `q` | Global | Quit Orpheus |
+| `q` | Global | Quit Pacseer |
 
 #### Responsive Breakpoints
 - **Large (`≥ 105 cols`, `≥ 24 rows`)**: Full 3-panel flex layout (Sidebar 16% | Package List ~44% | Detail View 40%).

@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Create a report to help us improve Orpheus
+about: Create a report to help us improve Pacseer
 title: '[BUG] '
 labels: bug
 assignees: ''
@@ -11,7 +11,7 @@ A clear and concise description of what the bug is.
 
 **To Reproduce**
 Steps to reproduce the behavior:
-1. Launch Orpheus with `...`
+1. Launch Pacseer with `...`
 2. Navigate to `...`
 3. Press `...`
 4. See error

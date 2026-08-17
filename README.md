@@ -1,12 +1,12 @@
 <div align="center">
 
-# Orpheus
+# Pacseer
 
 **A terminal-based package management dashboard for Arch Linux**
 
 *Browse, inspect, AI-analyze, search, install, update, and batch-uninstall packages across multiple package managers — all from one unified TUI.*
 
-![Orpheus Dashboard](https://github.com/user-attachments/assets/03d0c46a-2120-4d3a-a6d2-01f45591aeb1)
+![Pacseer Dashboard](https://github.com/user-attachments/assets/03d0c46a-2120-4d3a-a6d2-01f45591aeb1)
 
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
 [![Bubble Tea](https://img.shields.io/badge/Bubble_Tea-TUI-FF75B5?style=flat-square)](https://github.com/charmbracelet/bubbletea)
@@ -16,11 +16,11 @@
 
 ---
 
-##  Why Orpheus?
+##  Why Pacseer?
 
 Your system accumulates packages over time. Some you installed months ago and forgot about. Some are 500 MB behemoths you used once. Some are mysterious dependencies you're not even sure what they do anymore.
 
-**Orpheus gives you total clarity and control.** It pulls every explicitly installed package from Pacman/AUR and Flatpak into a single dashboard, lets an AI analyze safety and system context, and provides one-key workflows for installing, updating, orphan cleaning, and batch uninstallation.
+**Pacseer gives you total clarity and control.** It pulls every explicitly installed package from Pacman/AUR and Flatpak into a single dashboard, lets an AI analyze safety and system context, and provides one-key workflows for installing, updating, orphan cleaning, and batch uninstallation.
 
 ---
 
@@ -33,7 +33,7 @@ A clean, vim-navigable interface:
 - **Detail Panel (Right)**: Comprehensive package metadata, dependencies, action status, and AI insights.
 
 ###  Multi-Manager Operations (Auto-Detected)
-Orpheus inspects your machine and automatically activates only the package managers present on your system:
+Pacseer inspects your machine and automatically activates only the package managers present on your system:
 | Manager | What It Lists | Install / Search | Full Upgrade (`U`) | Uninstall Strategy |
 |---|---|---|---|---|
 | **Pacman** | Official Arch packages (`pacman -Qin`) | Official Repos (`[core]`, `[extra]`, `[multilib]`) | `pacman -Syu --noconfirm` | `pacman -Rns --noconfirm` (recursive dependency removal) |
@@ -41,7 +41,7 @@ Orpheus inspects your machine and automatically activates only the package manag
 | **Flatpak** | Installed Flatpak desktop applications | Configured Flatpak remotes (Flathub, etc.) | `flatpak update -y` | Uninstalls app + deletes data + cleans unused runtimes |
 
 ###  AI-Powered Package Analysis
-Press `a` on any package and Orpheus leverages Groq (Llama 3.3 70B) to deliver context-aware intelligence:
+Press `a` on any package and Pacseer leverages Groq (Llama 3.3 70B) to deliver context-aware intelligence:
 - **Purpose**: What the package does on *your* machine.
 - **Context Inference**: Explains *why* you likely installed it based on your other installed packages (e.g., knowing you have `neovim` helps it infer why `lua51` exists).
 - **Safety Verdict**: Clear `[KEEP]`, `[CAUTION]`, or `[SAFE]` verdict for removals.
@@ -74,7 +74,7 @@ Analysis results are saved locally to `~/.cache/pacseer/analysis.json` in clean,
 
 ##  Keybindings
 
-Orpheus uses intuitive **vim-style keybindings** throughout. The status bar at the bottom always displays context-sensitive shortcuts.
+Pacseer uses intuitive **vim-style keybindings** throughout. The status bar at the bottom always displays context-sensitive shortcuts.
 
 ### Global & Navigation
 | Key | Action |
@@ -87,7 +87,7 @@ Orpheus uses intuitive **vim-style keybindings** throughout. The status bar at t
 | `Tab` | Switch active package manager (Pacman ↔ AUR ↔ Flatpak) |
 | `l` / `Enter` | Focus detail panel (scroll view) / confirm modal |
 | `Esc` | Clear visual selection / cancel / exit search / back |
-| `q` | Quit Orpheus |
+| `q` | Quit Pacseer |
 
 ### Selection & Filtering
 | Key | Action |
@@ -148,7 +148,7 @@ GROQ_API_KEY=your_groq_api_key_here
 ./pacseer
 ```
 
-> **Note:** Orpheus automatically resolves `.env` relative to the executable binary location, so you can symlink or move the binary anywhere (e.g. `~/.local/bin/pacseer`).
+> **Note:** Pacseer automatically resolves `.env` relative to the executable binary location, so you can symlink or move the binary anywhere (e.g. `~/.local/bin/pacseer`).
 
 ---
 
@@ -220,6 +220,6 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 **Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea)  and [Lip Gloss](https://github.com/charmbracelet/lipgloss) **
 
-*Orpheus — Package management made clean, fast, and intelligent.*
+*Pacseer — Package management made clean, fast, and intelligent.*
 
 </div>
