@@ -14,21 +14,43 @@ func (m Model) View() string {
 		return "\n  Loading Orpheus...\n"
 	}
 
-	const minWidth = 100
+	const minWidth = 45
 	const minHeight = 10
 
 	if m.width < minWidth || m.height < minHeight {
 		return m.renderTooSmall(minWidth, minHeight)
 	}
 
-	sidebar := m.renderSidebar()
-	list := m.renderListPanel()
-	detail := m.renderDetailPanel()
+	var content string
+	if m.isCompact() {
+		// 1-Panel focus mode: List by default, Detail when focused on detail
+		if m.focusedPanel == panelDetail {
+			content = m.renderDetailPanel()
+		} else {
+			content = m.renderListPanel()
+		}
+	} else if m.isMedium() {
+		// 2-Panel mode: List + Detail
+		list := m.renderListPanel()
+		detail := m.renderDetailPanel()
+		content = lipgloss.JoinHorizontal(lipgloss.Top, list, detail)
+	} else {
+		// 3-Panel mode: Sidebar + List + Detail
+		sidebar := m.renderSidebar()
+		list := m.renderListPanel()
+		detail := m.renderDetailPanel()
+		content = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, list, detail)
+	}
 
-	content := lipgloss.JoinHorizontal(lipgloss.Top, sidebar, list, detail)
 	status := m.renderStatusBar()
 
-	mainView := lipgloss.JoinVertical(lipgloss.Left, content, status)
+	var mainView string
+	if !m.isLarge() {
+		topBar := m.renderTopTabBar()
+		mainView = lipgloss.JoinVertical(lipgloss.Left, topBar, content, status)
+	} else {
+		mainView = lipgloss.JoinVertical(lipgloss.Left, content, status)
+	}
 
 	if m.removingOrphans {
 		return m.renderOrphanModal()
@@ -43,6 +65,36 @@ func (m Model) View() string {
 	}
 
 	return mainView
+}
+
+func (m Model) renderTopTabBar() string {
+	var sb strings.Builder
+	sb.WriteString(" " + styleTitle.Render("Orpheus") + "  ")
+
+	for i, mgr := range m.managers {
+		label := mgr.Name()
+		if len(label) > 0 {
+			label = strings.ToUpper(label[:1]) + label[1:]
+		}
+		tabText := fmt.Sprintf("[%d] %s", i+1, label)
+		if m.activeMgr == i {
+			sb.WriteString(styleSidebarActive.Render(tabText) + "  ")
+		} else {
+			sb.WriteString(styleDimmed.Render(tabText) + "  ")
+		}
+	}
+
+	if m.isCompact() {
+		if m.focusedPanel == panelDetail {
+			sb.WriteString(styleAILabel.Render("(Detail View - Esc: back)"))
+		} else {
+			sb.WriteString(styleDimmed.Render("(Enter: detail | Tab: switch)"))
+		}
+	} else {
+		sb.WriteString(styleDimmed.Render("(Tab: switch manager)"))
+	}
+
+	return sb.String() + "\n"
 }
 
 func (m Model) renderTooSmall(minW, minH int) string {
@@ -74,8 +126,8 @@ func (m Model) renderUpdateModal() string {
 		mgrTitle = "Pacman / AUR"
 	}
 
-	const modalW = 76             // outer modal width
-	const innerW = modalW - 8 - 2 // minus padding(3*2) and borders(1*2) = 66
+	modalW := minI(76, maxI(36, m.width-4))
+	innerW := modalW - 8 - 2
 
 	var sb strings.Builder
 	title := "Update Packages"
@@ -170,10 +222,12 @@ func (m Model) renderUpdateModal() string {
 func (m Model) renderOrphanModal() string {
 	mgrName := m.managers[m.activeMgr].Name()
 	mgrTitle := strings.ToUpper(mgrName[:1]) + mgrName[1:]
+	modalW := minI(50, maxI(36, m.width-4))
+	innerW := modalW - 8 - 2
 	var sb strings.Builder
 
 	sb.WriteString(styleTitle.Render("Orphan Cleanup — "+mgrTitle) + "\n")
-	sb.WriteString(styleDivider.Render(strings.Repeat("─", 44)) + "\n\n")
+	sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n\n")
 
 	switch {
 	case m.checkingOrphans:
@@ -204,7 +258,7 @@ func (m Model) renderOrphanModal() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorBorderFoc).
 		Padding(1, 3).
-		Width(50).
+		Width(modalW).
 		Render(sb.String())
 
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modalBox)
@@ -237,8 +291,8 @@ func (m Model) renderInstallModal() string {
 		mgrTitle = "Pacman / AUR"
 	}
 
-	const modalW = 76             // outer modal width
-	const innerW = modalW - 8 - 2 // minus padding(3*2) and borders(1*2) = 66
+	modalW := minI(76, maxI(36, m.width-4))
+	innerW := modalW - 8 - 2
 
 	var sb strings.Builder
 	sb.WriteString(styleTitle.Render("Install Package") + styleDimmed.Render(" — ") + styleAILabel.Render(mgrTitle) + "\n")
@@ -414,7 +468,7 @@ func (m Model) renderInstallModal() string {
 
 func (m Model) renderSidebar() string {
 	w := m.sidebarWidth()
-	h := m.height - 3
+	h := m.contentHeight()
 
 	var sb strings.Builder
 	sb.WriteString(styleTitle.Render("  Orpheus") + "\n\n")
@@ -451,7 +505,7 @@ func (m Model) renderSidebar() string {
 
 func (m Model) renderListPanel() string {
 	w := m.listWidth()
-	h := m.height - 3
+	h := m.contentHeight()
 	inner := h - 2 // minus borders
 	var sb strings.Builder
 	sb.WriteString(m.renderPackageList(w, inner))
@@ -485,7 +539,7 @@ func (m Model) renderPackageList(w, h int) string {
 	}
 
 	sb.WriteString(styleTitle.Render(title) + "\n")
-	sb.WriteString(styleDivider.Render(strings.Repeat("─", w-2)) + "\n")
+	sb.WriteString(styleDivider.Render(strings.Repeat("─", maxI(2, w-2))) + "\n")
 
 	if m.loading {
 		sb.WriteString("\n  " + m.spinner.View() + " Loading packages...\n")
@@ -521,7 +575,7 @@ func (m Model) renderPackageList(w, h int) string {
 
 func renderPkgLine(p pm.Package, width int, checked bool, hovered bool) string {
 	size := fmt.Sprintf("%-10s", p.FormatSize())
-	nameWidth := width - 16
+	nameWidth := maxI(8, width-16)
 	name := truncate(p.Name, nameWidth)
 
 	var badge string
@@ -547,14 +601,14 @@ func renderPkgLine(p pm.Package, width int, checked bool, hovered bool) string {
 
 func (m Model) renderDetailPanel() string {
 	w := m.detailWidth()
-	h := m.height - 3
+	h := m.contentHeight()
 
 	var content string
 	if m.askingPassword || m.removingLoading || m.removeErr != "" {
 		// Render the action view (password/spinner/error) directly in the
 		// panel instead of the viewport so it never overflows.
 		content = m.renderActionView(w)
-	} else if m.focusedPanel != panelDetail {
+	} else if m.focusedPanel != panelDetail && !m.isCompact() {
 		content = m.renderDetailEmpty()
 	} else if m.selectedPkg == nil && len(m.selectedPkgs) <= 1 {
 		content = m.renderDetailEmpty()
@@ -566,7 +620,7 @@ func (m Model) renderDetailPanel() string {
 	if m.focusedPanel == panelDetail {
 		st = stylePanelFocused
 	}
-	return st.Width(w).Height(h).Padding(0, 2).Render(content)
+	return st.Width(w).Height(h).Padding(0, 1).Render(content)
 }
 
 // renderActionView builds the full detail-panel content shown during

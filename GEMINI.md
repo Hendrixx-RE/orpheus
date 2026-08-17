@@ -45,6 +45,8 @@ orpheus/
     │
     ├── pm/                  # Package Manager abstraction layer
     │   ├── package.go       # Package struct, Manager interface
+    │   ├── detect.go        # Dynamic host package manager detection
+    │   ├── detect_test.go   # Manager detection unit tests
     │   ├── pacman.go        # Pacman/AUR implementation (pacman -Qi parser, search, update, orphans)
     │   ├── flatpak.go       # Flatpak implementation (list, search, install, update, cleanup)
     │   ├── fuzzy.go         # Fuzzy search and repository relevance ranking engine
@@ -160,6 +162,7 @@ Helper methods: `SizeMB() float64`, `FormatSize() string` (human-readable: B/KiB
 |---|---|---|
 | `j` / `k` | Global / List / Detail | Navigate down / up |
 | `h` / `l` | Panels | Switch panel focus (Sidebar ↔ List ↔ Detail) |
+| `Tab` | Global / List / Detail | Switch active package manager (Pacman ↔ Flatpak) |
 | `Space` | List | Toggle selection for package under cursor |
 | `v` | List | Enter / commit visual range selection mode |
 | `Enter` / `l` | List | Open package detail |
@@ -172,6 +175,12 @@ Helper methods: `SizeMB() float64`, `FormatSize() string` (human-readable: B/KiB
 | `s` | List | Cycle sort: Name → Size → Date |
 | `r` | List | Reload package list |
 | `q` | Global | Quit Orpheus |
+
+#### Responsive Breakpoints
+- **Large (`≥ 105 cols`, `≥ 24 rows`)**: Full 3-panel flex layout (Sidebar 16% | Package List ~44% | Detail View 40%).
+- **Medium (`80–104 cols` or `18–23 rows`)**: 2-panel layout with top tab bar for package managers (`List 50% | Detail 50%`).
+- **Compact (`< 80 cols` or `< 18 rows`)**: Single-panel focused mode with top tab bar (`Enter` opens Detail full-screen, `Esc`/`h` returns to List).
+- **Minimum Guard (`< 45 cols` or `< 10 rows`)**: Centered window resize warning.
 
 #### Modals & Flows
 1. **Search & Install Modal (`i`)**: Interactive search input, results list with repository tags (`[core]`, `[extra]`, `[aur]`), package preview (`Tab`), and sudo authentication.

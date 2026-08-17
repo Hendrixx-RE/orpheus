@@ -186,7 +186,7 @@ func New() Model {
 		updateOutputVP:       uvp,
 		loading:              true,
 		selectedPkgs:         make(map[string]bool),
-		managers:             []pm.Manager{pm.NewPacman(), pm.NewFlatpak()},
+		managers:             pm.DetectManagers(),
 		activeMgr:            0,
 		aiSvc:                ai.New(),
 		cache:                c,
@@ -418,14 +418,62 @@ func (m *Model) ensureVisible() {
 	}
 }
 
-func (m Model) listPanelHeight() int {
-	return m.height - 7 // panel height (m.height - 3) - borders (2) - title (1) - divider (1)
+func (m Model) isCompact() bool {
+	return m.width < 80 || m.height < 18
 }
 
-func (m Model) sidebarWidth() int { return 18 }
-func (m Model) detailWidth() int  { return 46 }
+func (m Model) isMedium() bool {
+	return !m.isCompact() && (m.width < 110 || m.height < 24)
+}
+
+func (m Model) isLarge() bool {
+	return !m.isCompact() && !m.isMedium()
+}
+
+func (m Model) topBarHeight() int {
+	if m.isLarge() {
+		return 0
+	}
+	return 2
+}
+
+func (m Model) sidebarWidth() int {
+	if !m.isLarge() {
+		return 0
+	}
+	return clamp(int(float64(m.width)*0.16), 16, 22)
+}
+
+func (m Model) detailWidth() int {
+	if m.isCompact() {
+		return maxI(36, m.width-4)
+	}
+	if m.isMedium() {
+		return maxI(32, m.width-m.listWidth()-5)
+	}
+	return clamp(int(float64(m.width)*0.40), 40, 56)
+}
+
 func (m Model) listWidth() int {
-	return m.width - m.sidebarWidth() - m.detailWidth() - 6
+	if m.isCompact() {
+		return maxI(36, m.width-4)
+	}
+	if m.isMedium() {
+		return maxI(32, (m.width-5)/2)
+	}
+	return maxI(30, m.width-m.sidebarWidth()-m.detailWidth()-6)
+}
+
+func (m Model) contentHeight() int {
+	return maxI(4, m.height-3-m.topBarHeight())
+}
+
+func (m Model) listPanelHeight() int {
+	return maxI(2, m.contentHeight()-4)
+}
+
+func (m Model) detailViewportHeight() int {
+	return maxI(4, m.contentHeight()-4)
 }
 
 func clamp(v, lo, hi int) int {

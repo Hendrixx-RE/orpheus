@@ -82,8 +82,9 @@ Orpheus uses intuitive **vim-style keybindings** throughout. The status bar at t
 | `Ctrl+D` / `Ctrl+U` | Half-page down / up |
 | `G` | Jump to bottom |
 | `gg` | Jump to top |
+| `Tab` | Switch active package manager (Pacman ↔ Flatpak) |
 | `Enter` / `l` | Open detail / commit selection / confirm |
-| `Esc` | Clear visual selection / cancel / exit search |
+| `Esc` | Clear visual selection / cancel / exit search / back |
 | `q` | Quit Orpheus |
 
 ### Selection & Filtering

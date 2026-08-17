@@ -25,8 +25,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.detailVP = viewport.New(m.detailWidth()-6, m.height-6)
-		m.installOutputVP = viewport.New(60, 6)
+		m.detailVP = viewport.New(maxI(10, m.detailWidth()-6), m.detailViewportHeight())
+		m.installOutputVP = viewport.New(minI(60, maxI(20, m.width-12)), 6)
+		m.updateOutputVP.Width = minI(66, maxI(20, m.width-12))
 		if m.selectedPkg != nil {
 			m.detailVP.SetContent(m.buildDetailContent())
 		}
@@ -463,9 +464,13 @@ func (m Model) handleDetailKey(key string) (Model, tea.Cmd) {
 		return m.startInstall()
 	case "U":
 		return m.startFullUpgrade()
-	case "u":
-		return m.startUpdate()
-	case "esc", "h":
+	case "tab":
+		m.activeMgr = (m.activeMgr + 1) % len(m.managers)
+		m.loading = true
+		m.selectedPkgs = make(map[string]bool)
+		m.visualMode = false
+		return m, loadPackages(m.managers[m.activeMgr])
+	case "esc", "h", "left":
 		m.focusedPanel = panelList
 	}
 	m.lastKey = ""
@@ -504,6 +509,12 @@ func (m Model) handleSidebarKey(key string) (Model, tea.Cmd) {
 
 func (m Model) handleListKey(key string) (Model, tea.Cmd) {
 	switch key {
+	case "tab":
+		m.activeMgr = (m.activeMgr + 1) % len(m.managers)
+		m.loading = true
+		m.selectedPkgs = make(map[string]bool)
+		m.visualMode = false
+		return m, loadPackages(m.managers[m.activeMgr])
 	case "x":
 		return m.startRemoval()
 	case " ":
@@ -523,6 +534,11 @@ func (m Model) handleListKey(key string) (Model, tea.Cmd) {
 		} else {
 			m.visualMode = true
 			m.visualStart = m.listCursor
+		}
+		m.lastKey = ""
+	case "h", "left":
+		if m.isLarge() {
+			m.focusedPanel = panelSidebar
 		}
 		m.lastKey = ""
 	case "j", "down":
