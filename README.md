@@ -42,12 +42,12 @@ Pacseer inspects your machine and automatically activates only the package manag
 | **Flatpak** | Installed Flatpak desktop applications | Configured Flatpak remotes (Flathub, etc.) | `flatpak update -y` | Uninstalls app + deletes data + cleans unused runtimes |
 
 ###  AI-Powered Package Analysis
-Press `a` on any package and Pacseer leverages Groq (Llama 3.3 70B) to deliver context-aware intelligence:
+Pacseer leverages AI to deliver context-aware intelligence for your installed packages. A background worker automatically scans and analyzes all your explicitly installed packages asynchronously — you don't even need to press `a` (though you can use `a` to force a re-analysis). Any major AI provider (Gemini, Groq, OpenAI, Anthropic) can be used just by dropping your API key into `~/.config/pacseer/config.env`!
 - **Purpose**: What the package does on *your* machine.
 - **Context Inference**: Explains *why* you likely installed it based on your other installed packages (e.g., knowing you have `neovim` helps it infer why `lua51` exists).
 - **Safety Verdict**: Clear `[KEEP]`, `[CAUTION]`, or `[SAFE]` verdict for removals.
 - **Launch Command**: Extracts and displays terminal launch commands (`Command: ...`).
-- **Deduplicated & Cached**: Singleflight concurrency deduplication and persistent caching ensure network requests are never repeated for cached packages.
+- **Deduplicated & Cached**: Singleflight concurrency deduplication and permanent package-name caching ensure network requests are never repeated for cached packages (even across system upgrades).
 
 ###  Fuzzy Search & Package Installation (`i`)
 - Press `i` to open the interactive **Install Modal**.
