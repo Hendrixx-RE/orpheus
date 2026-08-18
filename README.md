@@ -1,12 +1,13 @@
+
 <div align="center">
 
 # Pacseer
 
 **A terminal-based package management dashboard for Arch Linux**
 
-*Browse, inspect, AI-analyze, search, install, update, and batch-uninstall packages across multiple package managers — all from one unified TUI.*
+*Browse, inspect, AI-analyze, search, install, update/batch update, and uninstall/batch uninstall packages across multiple package managers — all from one unified TUI.*
 
-![Pacseer Dashboard](https://github.com/user-attachments/assets/03d0c46a-2120-4d3a-a6d2-01f45591aeb1)
+![Pacseer Dashboard](https://github.com/user-attachments/assets/0837cbbd-aee3-43c3-b7b2-ca40ec37db53)
 
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
 [![Bubble Tea](https://img.shields.io/badge/Bubble_Tea-TUI-FF75B5?style=flat-square)](https://github.com/charmbracelet/bubbletea)
@@ -18,7 +19,7 @@
 
 ##  Why Pacseer?
 
-Your system accumulates packages over time. Some you installed months ago and forgot about. Some are 500 MB behemoths you used once. Some are mysterious dependencies you're not even sure what they do anymore.
+Your system accumulates packages over time. Some you installed months ago and forgot about. Some are 500 MB chonks you used once. Some are mysterious dependencies you're not even sure what they do anymore.
 
 **Pacseer gives you total clarity and control.** It pulls every explicitly installed package from Pacman/AUR and Flatpak into a single dashboard, lets an AI analyze safety and system context, and provides one-key workflows for installing, updating, orphan cleaning, and batch uninstallation.
 
