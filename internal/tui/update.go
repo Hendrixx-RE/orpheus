@@ -6,9 +6,9 @@ import (
 	"strings"
 	"context"
 
-	"pacseer/internal/ai"
-	"pacseer/internal/cache"
-	"pacseer/internal/pm"
+	"packichu/internal/ai"
+	"packichu/internal/cache"
+	"packichu/internal/pm"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"

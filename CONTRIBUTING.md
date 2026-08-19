@@ -1,6 +1,6 @@
-# Contributing to Pacseer
+# Contributing to Packichu
 
-First off, thank you for considering contributing to Pacseer! 🎉
+First off, thank you for considering contributing to Packichu! 🎉
 
 ## Development Setup
 
@@ -13,8 +13,8 @@ First off, thank you for considering contributing to Pacseer! 🎉
 
 ```bash
 # Clone the repository
-git clone https://github.com/Hendrixx-RE/pacseer.git
-cd pacseer
+git clone https://github.com/Hendrixx-RE/packichu.git
+cd packichu
 
 # Build binary
 make build
@@ -22,8 +22,8 @@ make build
 # Run unit tests
 make test
 
-# Launch Pacseer
-./pacseer
+# Launch Packichu
+./packichu
 ```
 
 ## Project Structure

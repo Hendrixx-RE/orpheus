@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	"pacseer/internal/pm"
+	"packichu/internal/pm"
 
 	"github.com/charmbracelet/lipgloss"
 )
 
 func (m Model) View() string {
 	if !m.ready {
-		return "\n  Loading Pacseer...\n"
+		return "\n  Loading Packichu...\n"
 	}
 
 	const minWidth = 45
@@ -85,7 +85,7 @@ func mgrDisplayName(name string) string {
 
 func (m Model) renderTopTabBar() string {
 	var sb strings.Builder
-	sb.WriteString(" " + styleTitle.Render("Pacseer") + "  ")
+	sb.WriteString(" " + styleTitle.Render("Packichu") + "  ")
 
 	for i, mgr := range m.managers {
 		label := mgrDisplayName(mgr.Name())
@@ -120,7 +120,7 @@ func (m Model) renderTooSmall(minW, minH int) string {
 	sb.WriteString(styleDimmed.Render("Please resize your terminal window:") + "\n\n")
 	sb.WriteString(fmt.Sprintf("  Current size:  %s\n", styleOrphan.Render(fmt.Sprintf("%d × %d", m.width, m.height))))
 	sb.WriteString(fmt.Sprintf("  Required size: %s\n\n", styleVerdict.Render(fmt.Sprintf("%d × %d", minW, minH))))
-	sb.WriteString(styleDimmed.Render("Enlarge the window to continue using Pacseer."))
+	sb.WriteString(styleDimmed.Render("Enlarge the window to continue using Packichu."))
 
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -481,7 +481,7 @@ func (m Model) renderSidebar() string {
 	h := m.contentHeight()
 
 	var sb strings.Builder
-	sb.WriteString(styleTitle.Render("  Pacseer") + "\n\n")
+	sb.WriteString(styleTitle.Render("  Packichu") + "\n\n")
 	sb.WriteString(styleTitle.Render("  Packages") + "\n")
 
 	for i, mgr := range m.managers {

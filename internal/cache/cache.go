@@ -16,17 +16,24 @@ type Cache struct {
 }
 
 func New() (*Cache, error) {
-	dir, err := os.UserCacheDir()
+	cacheBase, err := os.UserCacheDir()
 	if err != nil {
-		dir = os.TempDir()
+		cacheBase = os.TempDir()
 	}
-	dir = filepath.Join(dir, "pacseer")
+	dir := filepath.Join(cacheBase, "packichu")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
+	newPath := filepath.Join(dir, "analysis.json")
+	if _, err := os.Stat(newPath); os.IsNotExist(err) {
+		oldPath := filepath.Join(cacheBase, "pacseer", "analysis.json")
+		if oldData, err := os.ReadFile(oldPath); err == nil {
+			_ = os.WriteFile(newPath, oldData, 0o644)
+		}
+	}
 	c := &Cache{
 		data: make(map[string]string),
-		path: filepath.Join(dir, "analysis.json"),
+		path: newPath,
 	}
 	c.load()
 	return c, nil

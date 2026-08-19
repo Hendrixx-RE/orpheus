@@ -1,6 +1,6 @@
-# Pacseer — Project Reference for AI Agents
+# Packichu — Project Reference for AI Agents
 
-> **Pacseer** is a terminal-based (TUI) package management and AI-powered system inspection dashboard for Arch Linux.
+> **Packichu** is a terminal-based (TUI) package management and AI-powered system inspection dashboard for Arch Linux.
 > It lets users browse, inspect, AI-analyze, search, install, update, and batch-uninstall packages across multiple
 > package managers (Pacman, AUR, Flatpak) in a unified, reactive interface.
 
@@ -11,13 +11,13 @@
 | Key | Value |
 |---|---|
 | Language | Go 1.26 |
-| Module | `pacseer` |
+| Module | `packichu` |
 | TUI Framework | [Bubble Tea](https://github.com/charmbracelet/bubbletea) + [Lip Gloss](https://github.com/charmbracelet/lipgloss) + [Bubbles](https://github.com/charmbracelet/bubbles) |
 | AI Providers | **Google Gemini** (`gemini-2.5-flash`), **Groq** (`openai/gpt-oss-120b`), **OpenAI** (`gpt-4o-mini`), **Anthropic** (`claude-3-5-haiku-latest`) |
 | Provider Detection | Automatic based on active API key in config (`GEMINI_API_KEY`, `GROQ_API_KEY`, etc.) |
-| Config | `~/.config/pacseer/config.env` (or `~/.config/pacseer/.env`, `./.env`, `~/.pacseer.env`) |
-| Cache | `~/.cache/pacseer/analysis.json` (keyed permanently by `pkg.Name`) |
-| Binary | `pacseer` (built with `go build`) |
+| Config | `~/.config/packichu/config.env` (or `~/.config/packichu/.env`, `./.env`, `~/.packichu.env`) |
+| Cache | `~/.cache/packichu/analysis.json` (keyed permanently by `pkg.Name`) |
+| Binary | `packichu` (built with `go build`) |
 | Target OS | Linux (Arch-based, uses `pacman`) |
 | Optional Deps | `yay` or `paru` (for AUR search, install & upgrade support), `flatpak` |
 | Color Themes | **Gruvbox Retro** (Default), **Catppuccin** (Mocha), **Monokai** (cycle with `t`) |
@@ -27,7 +27,7 @@
 ## Directory Structure
 
 ```
-pacseer/
+packichu/
 ├── main.go                  # Entry point — loads XDG config, starts Bubble Tea program
 ├── go.mod / go.sum          # Module definition and dependency lock
 ├── .env.example             # Template config file with Gemini, Groq, OpenAI, Anthropic examples
@@ -74,8 +74,8 @@ pacseer/
 ### 1. Entry Point & Config Loading (`main.go`)
 
 - `loadConfig()` searches and loads configuration in standard priority order:
-  1. `~/.config/pacseer/config.env` (or `~/.config/pacseer/.env`, `~/.config/pacseer/config`)
-  2. `~/.pacseer.env`
+  1. `~/.config/packichu/config.env` (or `~/.config/packichu/.env`, `~/.config/packichu/config`)
+  2. `~/.packichu.env`
   3. `./.env` (Current working directory)
   4. Executable directory `.env`
 - Parses `KEY=VALUE` pairs, strips comments/quotes, and sets environment variables not already exported.
@@ -161,7 +161,7 @@ type Package struct {
 ### 4. Cache Architecture (`internal/cache/cache.go`)
 
 - **Thread-safe** via `sync.RWMutex`.
-- **Location**: `~/.cache/pacseer/analysis.json`.
+- **Location**: `~/.cache/packichu/analysis.json`.
 - **Package-Name Keying**: Analyses are stored directly under `pkg.Name` (e.g. `"neovim"`, `"git"`), making them immune to version upgrades (`pacman -Syu`).
 - **Auto-Migration**: Automatically promotes legacy `pkg@version` keys to package-name keys on startup.
 - **Manual Invalidation**: Pressing **`a`** forces a fresh re-analysis and updates the cache record.
@@ -172,7 +172,7 @@ type Package struct {
 
 #### Color Themes (`styles.go`)
 
-Pacseer supports 3 complete, hot-swappable color palettes. Pressing **`t`** cycles themes live:
+Packichu supports 3 complete, hot-swappable color palettes. Pressing **`t`** cycles themes live:
 
 1. **`Gruvbox Retro`** *(Default)*: Base `#282828`, Surface `#3c3836`, Yellow `#fabd2f`, Green `#b8bb26`, Cyan `#8ec07c`, Orange `#fe8019`.
 2. **`Catppuccin`** *(Mocha)*: Base `#1e1e2e`, Surface `#313244`, Mauve `#cba6f7`, Sky `#89dceb`, Green `#a6e3a1`, Peach `#fab387`.
@@ -206,7 +206,7 @@ Pacseer supports 3 complete, hot-swappable color palettes. Pressing **`t`** cycl
 | `/` | List | Filter installed packages |
 | `s` | List | Cycle sort: **Name → Size → Install Date** |
 | `r` | List | Reload package list from active manager |
-| `q` | Global | Quit Pacseer |
+| `q` | Global | Quit Packichu |
 
 #### Responsive Breakpoints
 
@@ -226,12 +226,12 @@ Pacseer supports 3 complete, hot-swappable color palettes. Pressing **`t`** cycl
 
 ## Configuration
 
-Pacseer loads configuration and API keys from `~/.config/pacseer/config.env` (or `~/.config/pacseer/.env`, `./.env`, `~/.pacseer.env`).
+Packichu loads configuration and API keys from `~/.config/packichu/config.env` (or `~/.config/packichu/.env`, `./.env`, `~/.packichu.env`).
 
-### Example `~/.config/pacseer/config.env`:
+### Example `~/.config/packichu/config.env`:
 
 ```env
-# Pacseer auto-detects whichever key you provide!
+# Packichu auto-detects whichever key you provide!
 # Option 1: Google Gemini (Recommended - Free tier at https://aistudio.google.com)
 GEMINI_API_KEY=AIzaSy...your_key_here
 
@@ -245,7 +245,7 @@ GEMINI_API_KEY=AIzaSy...your_key_here
 # ANTHROPIC_API_KEY=your_anthropic_key_here
 
 # Optional: Override the model (defaults to gemini-2.5-flash for Gemini, openai/gpt-oss-120b for Groq)
-# PACSEER_MODEL=gemini-2.5-flash
+# PACKICHU_MODEL=gemini-2.5-flash
 ```
 
 ---
@@ -263,5 +263,5 @@ make build
 sudo make install
 
 # Run
-./pacseer
+./packichu
 ```

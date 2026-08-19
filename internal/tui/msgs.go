@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"pacseer/internal/pm"
+	"packichu/internal/pm"
 )
 
 type pkgsLoadedMsg struct {

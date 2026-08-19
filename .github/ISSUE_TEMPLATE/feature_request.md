@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an idea or new package manager support for Pacseer
+about: Suggest an idea or new package manager support for Packichu
 title: '[FEATURE] '
 labels: enhancement
 assignees: ''

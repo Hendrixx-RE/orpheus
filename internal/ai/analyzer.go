@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"pacseer/internal/pm"
+	"packichu/internal/pm"
 )
 
 type sfCall struct {
@@ -96,7 +96,7 @@ func getEnv(keys ...string) string {
 }
 
 func New() *Analyzer {
-	providerStr := strings.ToLower(getEnv("PACSEER_PROVIDER", "ORPHEUS_PROVIDER"))
+	providerStr := strings.ToLower(getEnv("PACKICHU_PROVIDER", "PACSEER_PROVIDER", "ORPHEUS_PROVIDER"))
 
 	// Auto-detect provider if not explicitly configured
 	if providerStr == "" {
@@ -119,7 +119,7 @@ func New() *Analyzer {
 		client:   &http.Client{Timeout: 30 * time.Second},
 	}
 
-	model := getEnv("PACSEER_MODEL", "ORPHEUS_MODEL")
+	model := getEnv("PACKICHU_MODEL", "PACSEER_MODEL", "ORPHEUS_MODEL")
 
 	var defaultInterval time.Duration
 	switch a.provider {
@@ -158,7 +158,7 @@ func New() *Analyzer {
 		defaultInterval = 2500 * time.Millisecond // 30 RPM
 	}
 
-	if delayEnv := getEnv("PACSEER_RATE_LIMIT_DELAY", "ORPHEUS_RATE_LIMIT_DELAY"); delayEnv != "" {
+	if delayEnv := getEnv("PACKICHU_RATE_LIMIT_DELAY", "PACSEER_RATE_LIMIT_DELAY", "ORPHEUS_RATE_LIMIT_DELAY"); delayEnv != "" {
 		if d, err := time.ParseDuration(delayEnv); err == nil && d > 0 {
 			defaultInterval = d
 		}

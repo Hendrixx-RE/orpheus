@@ -1,4 +1,4 @@
-module pacseer
+module packichu
 
 go 1.26.4
 

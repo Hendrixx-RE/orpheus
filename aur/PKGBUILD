@@ -1,10 +1,10 @@
-# Maintainer: Pacseer Maintainers <maintainers@pacseer.local>
-pkgname=pacseer-git
+# Maintainer: Packichu Maintainers <maintainers@packichu.local>
+pkgname=packichu-git
 pkgver=0.1.0
 pkgrel=1
 pkgdesc="A terminal-based package management dashboard for Arch Linux"
 arch=('x86_64' 'aarch64')
-url="https://github.com/Hendrixx-RE/pacseer"
+url="https://github.com/Hendrixx-RE/packichu"
 license=('MIT')
 depends=('glibc' 'pacman')
 optdepends=(
@@ -13,31 +13,31 @@ optdepends=(
     'flatpak: Flatpak application management'
 )
 makedepends=('go' 'git')
-provides=('pacseer')
-conflicts=('pacseer' 'pacseer-bin')
-source=("git+https://github.com/Hendrixx-RE/pacseer.git")
+provides=('packichu')
+conflicts=('packichu' 'packichu-bin' 'pacseer' 'pacseer-git' 'pacseer-bin')
+source=("git+https://github.com/Hendrixx-RE/packichu.git")
 sha256sums=('SKIP')
 
 pkgver() {
-    cd "$srcdir/pacseer"
+    cd "$srcdir/packichu"
     git describe --long --tags 2>/dev/null | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' || printf "0.1.0.r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
 }
 
 build() {
-    cd "$srcdir/pacseer"
+    cd "$srcdir/packichu"
     export CGO_ENABLED=0
     export GOFLAGS="-buildmode=pie -trimpath -modcacherw"
-    go build -ldflags="-s -w -X main.version=$pkgver" -o pacseer .
+    go build -ldflags="-s -w -X main.version=$pkgver" -o packichu .
 }
 
 check() {
-    cd "$srcdir/pacseer"
+    cd "$srcdir/packichu"
     go test ./...
 }
 
 package() {
-    cd "$srcdir/pacseer"
-    install -Dm755 pacseer "$pkgdir/usr/bin/pacseer"
+    cd "$srcdir/packichu"
+    install -Dm755 packichu "$pkgdir/usr/bin/packichu"
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 }

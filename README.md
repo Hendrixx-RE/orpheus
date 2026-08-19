@@ -1,13 +1,13 @@
 
 <div align="center">
 
-# Pacseer
+# Packichu
 
 **A terminal-based package management dashboard for Arch Linux**
 
 *Browse, inspect, AI-analyze, search, install, update/batch update, and uninstall/batch uninstall packages across multiple package managers — all from one unified TUI.*
 
-![Pacseer Dashboard](https://github.com/user-attachments/assets/0837cbbd-aee3-43c3-b7b2-ca40ec37db53)
+![Packichu Dashboard](https://github.com/user-attachments/assets/0837cbbd-aee3-43c3-b7b2-ca40ec37db53)
 
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
 [![Bubble Tea](https://img.shields.io/badge/Bubble_Tea-TUI-FF75B5?style=flat-square)](https://github.com/charmbracelet/bubbletea)
@@ -17,11 +17,11 @@
 
 ---
 
-##  Why Pacseer?
+##  Why Packichu?
 
 Your system accumulates packages over time. Some you installed months ago and forgot about. Some are 500 MB chonks you used once. Some are mysterious dependencies you're not even sure what they do anymore.
 
-**Pacseer gives you total clarity and control.** It pulls every explicitly installed package from Pacman/AUR and Flatpak into a single dashboard, lets an AI analyze safety and system context, and provides one-key workflows for installing, updating, orphan cleaning, and batch uninstallation.
+**Packichu gives you total clarity and control.** It pulls every explicitly installed package from Pacman/AUR and Flatpak into a single dashboard, lets an AI analyze safety and system context, and provides one-key workflows for installing, updating, orphan cleaning, and batch uninstallation.
 
 ---
 
@@ -34,7 +34,7 @@ A clean, vim-navigable interface:
 - **Detail Panel (Right)**: Comprehensive package metadata, dependencies, action status, and AI insights.
 
 ###  Multi-Manager Operations (Auto-Detected)
-Pacseer inspects your machine and automatically activates only the package managers present on your system:
+Packichu inspects your machine and automatically activates only the package managers present on your system:
 | Manager | What It Lists | Install / Search | Full Upgrade (`U`) | Uninstall Strategy |
 |---|---|---|---|---|
 | **Pacman** | Official Arch packages (`pacman -Qin`) | Official Repos (`[core]`, `[extra]`, `[multilib]`) | `pacman -Syu --noconfirm` | `pacman -Rns --noconfirm` (recursive dependency removal) |
@@ -42,7 +42,7 @@ Pacseer inspects your machine and automatically activates only the package manag
 | **Flatpak** | Installed Flatpak desktop applications | Configured Flatpak remotes (Flathub, etc.) | `flatpak update -y` | Uninstalls app + deletes data + cleans unused runtimes |
 
 ###  AI-Powered Package Analysis
-Pacseer leverages AI to deliver context-aware intelligence for your installed packages. A background worker automatically scans and analyzes all your explicitly installed packages asynchronously — you don't even need to press `a` (though you can use `a` to force a re-analysis). Any major AI provider (Gemini, Groq, OpenAI, Anthropic) can be used just by dropping your API key into `~/.config/pacseer/config.env`!
+Packichu leverages AI to deliver context-aware intelligence for your installed packages. A background worker automatically scans and analyzes all your explicitly installed packages asynchronously — you don't even need to press `a` (though you can use `a` to force a re-analysis). Any major AI provider (Gemini, Groq, OpenAI, Anthropic) can be used just by dropping your API key into `~/.config/packichu/config.env`!
 - **Purpose**: What the package does on *your* machine.
 - **Context Inference**: Explains *why* you likely installed it based on your other installed packages (e.g., knowing you have `neovim` helps it infer why `lua51` exists).
 - **Safety Verdict**: Clear `[KEEP]`, `[CAUTION]`, or `[SAFE]` verdict for removals.
@@ -69,13 +69,13 @@ Pacseer leverages AI to deliver context-aware intelligence for your installed pa
 - `x`: Batch uninstall all selected packages in a single privileged `sudo` transaction.
 
 ###  Persistent Cache
-Analysis results are saved locally to `~/.cache/pacseer/analysis.json` in clean, human-readable JSON. Analyze once, read instantly forever.
+Analysis results are saved locally to `~/.cache/packichu/analysis.json` in clean, human-readable JSON. Analyze once, read instantly forever.
 
 ---
 
 ##  Keybindings
 
-Pacseer uses intuitive **vim-style keybindings** throughout. The status bar at the bottom always displays context-sensitive shortcuts.
+Packichu uses intuitive **vim-style keybindings** throughout. The status bar at the bottom always displays context-sensitive shortcuts.
 
 ### Global & Navigation
 | Key | Action |
@@ -88,7 +88,7 @@ Pacseer uses intuitive **vim-style keybindings** throughout. The status bar at t
 | `Tab` | Switch active package manager (Pacman ↔ AUR ↔ Flatpak) |
 | `l` / `Enter` | Focus detail panel (scroll view) / confirm modal |
 | `Esc` | Clear visual selection / cancel / exit search / back |
-| `q` | Quit Pacseer |
+| `q` | Quit Packichu |
 
 ### Selection & Filtering
 | Key | Action |
@@ -124,18 +124,18 @@ Pacseer uses intuitive **vim-style keybindings** throughout. The status bar at t
 ### Build from Source
 
 ```bash
-git clone https://github.com/your-username/pacseer.git
-cd pacseer
-go build -o pacseer .
+git clone https://github.com/Hendrixx-RE/packichu.git
+cd packichu
+go build -o packichu .
 ```
 
 ### Configuration
 
-Pacseer loads your configuration from `~/.config/pacseer/config.env` (or `~/.config/pacseer/.env`, `./.env`, `~/.pacseer.env`). No command-line arguments or `.env` in the working directory are required.
+Packichu loads your configuration from `~/.config/packichu/config.env` (or `~/.config/packichu/.env`, `./.env`, `~/.packichu.env`). No command-line arguments or `.env` in the working directory are required.
 
 #### Supported Providers & Auto-Detection
 
-Pacseer auto-detects whichever provider key is present:
+Packichu auto-detects whichever provider key is present:
 
 | Provider | Environment Variable | Default Model | Free Tier Available? |
 |---|---|---|:---:|
@@ -147,10 +147,10 @@ Pacseer auto-detects whichever provider key is present:
 #### Setup
 
 ```bash
-mkdir -p ~/.config/pacseer
+mkdir -p ~/.config/packichu
 ```
 
-Create `~/.config/pacseer/config.env`:
+Create `~/.config/packichu/config.env`:
 
 ```env
 # Option 1: Google Gemini (Recommended - Free tier)
@@ -166,13 +166,13 @@ GEMINI_API_KEY=AIzaSy...your_key_here
 # ANTHROPIC_API_KEY=sk-ant-...your_key_here
 
 # Optional: Override the model
-# PACSEER_MODEL=gemini-2.5-flash
+# PACKICHU_MODEL=gemini-2.5-flash
 
 # Optional: Force a specific provider if multiple keys exist (gemini, groq, openai, anthropic)
-# PACSEER_PROVIDER=gemini
+# PACKICHU_PROVIDER=gemini
 
 # Optional: Custom delay between background requests (default: 4s for Gemini, 2.5s for others)
-# PACSEER_RATE_LIMIT_DELAY=3s
+# PACKICHU_RATE_LIMIT_DELAY=3s
 ```
 
 ---
@@ -180,7 +180,7 @@ GEMINI_API_KEY=AIzaSy...your_key_here
 ##  Architecture
 
 ```
-pacseer/
+packichu/
 ├── main.go                  # Entry point — loads XDG config, initializes Bubble Tea program
 ├── go.mod / go.sum          # Module dependencies
 │
@@ -246,6 +246,6 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 **Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea)  and [Lip Gloss](https://github.com/charmbracelet/lipgloss) **
 
-*Pacseer — Package management made clean, fast, and intelligent.*
+*Packichu — Package management made clean, fast, and intelligent.*
 
 </div>

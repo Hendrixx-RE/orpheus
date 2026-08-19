@@ -1,6 +1,6 @@
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
-BINARY = pacseer
+BINARY = packichu
 
 .PHONY: all build test clean install uninstall run
 

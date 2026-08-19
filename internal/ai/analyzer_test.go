@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"pacseer/internal/pm"
+	"packichu/internal/pm"
 )
 
 func TestAnalyzerSingleflightDeduplication(t *testing.T) {
@@ -87,6 +87,7 @@ func TestRetryAfterDelayFloor(t *testing.T) {
 }
 
 func TestProviderAutoDetection(t *testing.T) {
+	t.Setenv("PACKICHU_PROVIDER", "")
 	t.Setenv("PACSEER_PROVIDER", "")
 	t.Setenv("ORPHEUS_PROVIDER", "")
 	t.Setenv("GROQ_API_KEY", "")

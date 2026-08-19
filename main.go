@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"pacseer/internal/tui"
+	"packichu/internal/tui"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -31,18 +31,24 @@ func loadConfig() {
 	// 1. Current working directory .env
 	candidatePaths = append(candidatePaths, ".env")
 
-	// 2. XDG Config directory: ~/.config/pacseer/config.env and ~/.config/pacseer/.env
+	// 2. XDG Config directory: ~/.config/packichu/config.env, ~/.config/packichu/.env, ~/.config/packichu/config
 	if configDir, err := os.UserConfigDir(); err == nil {
 		candidatePaths = append(candidatePaths,
+			filepath.Join(configDir, "packichu", "config.env"),
+			filepath.Join(configDir, "packichu", ".env"),
+			filepath.Join(configDir, "packichu", "config"),
 			filepath.Join(configDir, "pacseer", "config.env"),
 			filepath.Join(configDir, "pacseer", ".env"),
 			filepath.Join(configDir, "pacseer", "config"),
 		)
 	}
 
-	// 3. User Home directory: ~/.pacseer.env
+	// 3. User Home directory: ~/.packichu.env
 	if homeDir, err := os.UserHomeDir(); err == nil {
-		candidatePaths = append(candidatePaths, filepath.Join(homeDir, ".pacseer.env"))
+		candidatePaths = append(candidatePaths,
+			filepath.Join(homeDir, ".packichu.env"),
+			filepath.Join(homeDir, ".pacseer.env"),
+		)
 	}
 
 	// 4. Executable directory .env

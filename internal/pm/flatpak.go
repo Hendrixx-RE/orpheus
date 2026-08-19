@@ -180,7 +180,7 @@ func (p *Flatpak) ListAll() ([]Package, error) {
 		desc := strings.TrimSpace(parts[4])
 		arch := strings.TrimSpace(parts[5])
 
-		// For Pacseer UI, the main identifier is Name. Let's use the appID as Name
+		// For Packichu UI, the main identifier is Name. Let's use the appID as Name
 		// because that's what flatpak uninstall requires. We could use Name for the real name,
 		// but since we uninstall by name, we need the app ID as the Package.Name.
 		pkg := Package{
@@ -199,7 +199,7 @@ func (p *Flatpak) ListAll() ([]Package, error) {
 
 func (p *Flatpak) GetPackage(name string) (*Package, error) {
 	// The TUI only calls this for single details but we already get most details from ListAll.
-	// Since Pacseer actually calls ListAll once and filters in memory, this is rarely needed
+	// Since Packichu actually calls ListAll once and filters in memory, this is rarely needed
 	// for full fetch in pacman, except when getting detailed dependencies.
 	// We can try to use flatpak info, or just return basic info.
 	// Let's implement a dummy fallback. In tui, GetPackage isn't even used to fetch data for the list!
