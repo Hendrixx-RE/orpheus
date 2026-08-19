@@ -131,7 +131,20 @@ go build -o pacseer .
 
 ### Configuration
 
-Configure your AI keys and model in `~/.config/pacseer/config.env` (or `~/.config/pacseer/.env`):
+Pacseer loads your configuration from `~/.config/pacseer/config.env` (or `~/.config/pacseer/.env`, `./.env`, `~/.pacseer.env`). No command-line arguments or `.env` in the working directory are required.
+
+#### Supported Providers & Auto-Detection
+
+Pacseer auto-detects whichever provider key is present:
+
+| Provider | Environment Variable | Default Model | Free Tier Available? |
+|---|---|---|:---:|
+| **Google Gemini** *(Recommended)* | `GEMINI_API_KEY` | `gemini-2.5-flash` | Yes ([Google AI Studio](https://aistudio.google.com)) |
+| **Groq** | `GROQ_API_KEY` | `openai/gpt-oss-120b` | Yes ([Groq Console](https://console.groq.com)) |
+| **OpenAI** | `OPENAI_API_KEY` | `gpt-4o-mini` | Paid API credits |
+| **Anthropic** | `ANTHROPIC_API_KEY` | `claude-3-5-haiku-latest` | Paid API credits |
+
+#### Setup
 
 ```bash
 mkdir -p ~/.config/pacseer
@@ -140,15 +153,26 @@ mkdir -p ~/.config/pacseer
 Create `~/.config/pacseer/config.env`:
 
 ```env
-# Pacseer auto-detects whichever provider key is present!
-# Option 1: Google Gemini (Recommended - Free tier at https://aistudio.google.com)
+# Option 1: Google Gemini (Recommended - Free tier)
 GEMINI_API_KEY=AIzaSy...your_key_here
 
-# Option 2: Groq (Free tier at https://console.groq.com)
-# GROQ_API_KEY=your_groq_key_here
+# Option 2: Groq (Free tier)
+# GROQ_API_KEY=gsk_...your_key_here
 
-# Optional: Override the model (defaults to gemini-2.5-flash for Gemini, openai/gpt-oss-120b for Groq)
+# Option 3: OpenAI
+# OPENAI_API_KEY=sk-...your_key_here
+
+# Option 4: Anthropic
+# ANTHROPIC_API_KEY=sk-ant-...your_key_here
+
+# Optional: Override the model
 # PACSEER_MODEL=gemini-2.5-flash
+
+# Optional: Force a specific provider if multiple keys exist (gemini, groq, openai, anthropic)
+# PACSEER_PROVIDER=gemini
+
+# Optional: Custom delay between background requests (default: 4s for Gemini, 2.5s for others)
+# PACSEER_RATE_LIMIT_DELAY=3s
 ```
 
 ---
@@ -157,22 +181,23 @@ GEMINI_API_KEY=AIzaSy...your_key_here
 
 ```
 pacseer/
-├── main.go                  # Entry point — loads .env, initializes Bubble Tea program
+├── main.go                  # Entry point — loads XDG config, initializes Bubble Tea program
 ├── go.mod / go.sum          # Module dependencies
-├── .env                     # API configuration (ignored in git)
 │
 └── internal/
     ├── ai/
-    │   ├── analyzer.go      # Groq/Llama AI client, prompt builders, retry & rate limit protection
-    │   └── analyzer_test.go # Deduplication and backoff tests
+    │   ├── analyzer.go      # Multi-provider client (Gemini, Groq, OpenAI, Anthropic), singleflight, pacing
+    │   └── analyzer_test.go # Deduplication, delay floor, and provider detection tests
     │
     ├── cache/
-    │   ├── cache.go         # Thread-safe JSON file cache (sync.RWMutex)
-    │   └── cache_test.go    # Cache lookup and fallback tests
+    │   ├── cache.go         # Thread-safe JSON cache by package name (sync.RWMutex, auto-migration)
+    │   └── cache_test.go    # Cache lookup and version upgrade retention tests
     │
     ├── pm/                  # Package Manager Abstraction Layer
     │   ├── package.go       # Package struct & Manager interface
-    │   ├── pacman.go        # Pacman/AUR provider (-Qi parser, search, orphans, install, update)
+    │   ├── detect.go        # Dynamic package manager detector
+    │   ├── pacman.go        # Pacman official provider (-Qi parser, search, orphans, install, update)
+    │   ├── aur.go           # AUR foreign provider (yay/paru helper integration)
     │   ├── flatpak.go       # Flatpak provider (list, search, install, update, cleanup)
     │   ├── fuzzy.go         # Fuzzy matching & repository relevance ranking engine
     │   └── fuzzy_test.go    # Fuzzy scoring test suite
@@ -180,12 +205,12 @@ pacseer/
     └── tui/                 # Terminal UI (Bubble Tea + Lip Gloss)
         ├── model.go         # State machine, model definitions, async commands
         ├── msgs.go          # Message types
-        ├── update.go        # Key handlers, modal state logic, execution loops
-        ├── view.go          # Layout rendering (sidebar, list, detail, modals, status bar)
-        └── styles.go        # Gruvbox Dark design system and Lip Gloss styles
+        ├── update.go        # Key handlers, cross-manager sync worker, modals, execution loops
+        ├── view.go          # Layout rendering (sidebar, list, detail, highlighted command badge, modals)
+        ├── styles.go        # Multi-theme design system (Gruvbox Retro, Catppuccin, Monokai)
+        ├── theme_test.go    # Theme cycling tests
+        └── verdict_test.go  # Verdict and command parsing tests
 ```
-
----
 
 ---
 

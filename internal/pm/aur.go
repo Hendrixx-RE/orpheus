@@ -1,6 +1,8 @@
 package pm
 
 import (
+	"bufio"
+	"bytes"
 	"os/exec"
 	"strings"
 )
@@ -34,6 +36,12 @@ func (a *AUR) InstallCmd(name string) []string {
 	if h == "" {
 		h = "yay"
 	}
+	if h == "yay" {
+		return []string{h, "-S", "--noconfirm", "--sudoloop", "--answerclean=None", "--answerdiff=None", "--answeredit=None", "--answerupgrade=None", name}
+	}
+	if h == "paru" {
+		return []string{h, "-S", "--noconfirm", "--sudoloop", "--skipreview", name}
+	}
 	return []string{h, "-S", "--noconfirm", name}
 }
 
@@ -41,6 +49,12 @@ func (a *AUR) UpdateCmd() []string {
 	h := a.helper
 	if h == "" {
 		h = "yay"
+	}
+	if h == "yay" {
+		return []string{h, "-Sua", "--noconfirm", "--sudoloop", "--answerclean=None", "--answerdiff=None", "--answeredit=None", "--answerupgrade=None"}
+	}
+	if h == "paru" {
+		return []string{h, "-Sua", "--noconfirm", "--sudoloop", "--skipreview"}
 	}
 	return []string{h, "-Sua", "--noconfirm"}
 }
@@ -50,7 +64,39 @@ func (a *AUR) UpdatePackagesCmd(names []string) []string {
 	if h == "" {
 		h = "yay"
 	}
+	if h == "yay" {
+		return append([]string{h, "-S", "--noconfirm", "--sudoloop", "--answerclean=None", "--answerdiff=None", "--answeredit=None", "--answerupgrade=None"}, names...)
+	}
+	if h == "paru" {
+		return append([]string{h, "-S", "--noconfirm", "--sudoloop", "--skipreview"}, names...)
+	}
 	return append([]string{h, "-S", "--noconfirm"}, names...)
+}
+
+func (a *AUR) GetUpdatable() ([]UpdatablePackage, error) {
+	h := a.helper
+	if h == "" {
+		h = "yay"
+	}
+
+	var cmd *exec.Cmd
+	if h == "yay" {
+		cmd = exec.Command("yay", "-Qua")
+	} else if h == "paru" {
+		cmd = exec.Command("paru", "-Qua")
+	} else {
+		return nil, nil
+	}
+
+	out, _ := cmd.Output()
+	var results []UpdatablePackage
+	scanner := bufio.NewScanner(bytes.NewReader(out))
+	for scanner.Scan() {
+		if u, ok := parseCheckupdatesLine(scanner.Text(), "aur"); ok {
+			results = append(results, u)
+		}
+	}
+	return results, nil
 }
 
 func (a *AUR) UninstallOrphansCmd() []string {

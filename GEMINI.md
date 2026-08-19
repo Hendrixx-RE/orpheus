@@ -129,7 +129,7 @@ type Package struct {
 | Manager | `Name()` | `ListAll()` | `InstallCmd()` | `UpdateCmd()` | `UninstallCmd()` |
 |---|---|---|---|---|---|
 | **Pacman** | `"pacman"` | `pacman -Qin` → native packages, marks base/base-devel as `IsSystem` | `["pacman", "-S", "--noconfirm", name]` | `["pacman", "-Syu", "--noconfirm"]` | `["pacman", "-Rns", "--noconfirm", ...names]` |
-| **AUR** | `"aur"` | `pacman -Qim` → foreign/AUR packages | `["<helper>", "-S", "--noconfirm", name]` | `["<helper>", "-Sua", "--noconfirm"]` | `["pacman", "-Rns", "--noconfirm", ...names]` |
+| **AUR** | `"aur"` | `pacman -Qim` → foreign/AUR packages | `["yay", "-S", "--noconfirm", "--sudoloop", "--answerclean=None", "--answerdiff=None", ...]` | `["yay", "-Sua", "--noconfirm", "--sudoloop", ...]` | `["pacman", "-Rns", "--noconfirm", ...names]` |
 | **Flatpak** | `"flatpak"` | `flatpak list --app --columns=...` | `["sh", "-c", "dbus-run-session flatpak install -y --or-update --system " + name + " || ..."]` | `["sh", "-c", "dbus-run-session flatpak update -y"]` | `["sh", "-c", "dbus-run-session flatpak uninstall -y --delete-data ... && dbus-run-session flatpak uninstall -y --unused"]` |
 
 #### Relevance & Fuzzy Ranking Engine (`fuzzy.go`)

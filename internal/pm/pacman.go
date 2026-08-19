@@ -45,6 +45,56 @@ func (p *Pacman) UpdatePackagesCmd(names []string) []string {
 	return append([]string{"pacman", "-S", "--noconfirm"}, names...)
 }
 
+func parseCheckupdatesLine(line string, mgrName string) (UpdatablePackage, bool) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return UpdatablePackage{}, false
+	}
+	parts := strings.Fields(line)
+	if len(parts) >= 4 && parts[len(parts)-2] == "->" {
+		return UpdatablePackage{
+			Name:       parts[0],
+			OldVersion: parts[1],
+			NewVersion: parts[3],
+			Manager:    mgrName,
+		}, true
+	} else if len(parts) >= 2 {
+		return UpdatablePackage{
+			Name:       parts[0],
+			OldVersion: parts[1],
+			NewVersion: "",
+			Manager:    mgrName,
+		}, true
+	}
+	return UpdatablePackage{}, false
+}
+
+func (p *Pacman) GetUpdatable() ([]UpdatablePackage, error) {
+	var out []byte
+	var err error
+
+	if _, lookErr := exec.LookPath("checkupdates"); lookErr == nil {
+		cmd := exec.Command("checkupdates")
+		out, err = cmd.Output()
+		if err != nil && len(out) == 0 {
+			cmd2 := exec.Command("pacman", "-Qu")
+			out, _ = cmd2.Output()
+		}
+	} else {
+		cmd := exec.Command("pacman", "-Qu")
+		out, _ = cmd.Output()
+	}
+
+	var results []UpdatablePackage
+	scanner := bufio.NewScanner(bytes.NewReader(out))
+	for scanner.Scan() {
+		if u, ok := parseCheckupdatesLine(scanner.Text(), "pacman"); ok {
+			results = append(results, u)
+		}
+	}
+	return results, nil
+}
+
 func (p *Pacman) Search(query string) ([]Package, error) {
 	trimmed := strings.TrimSpace(query)
 	if trimmed == "" {

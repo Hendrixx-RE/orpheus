@@ -38,6 +38,37 @@ func (p *Flatpak) UpdatePackagesCmd(names []string) []string {
 	return []string{"sh", "-c", cmdStr}
 }
 
+func (p *Flatpak) GetUpdatable() ([]UpdatablePackage, error) {
+	out, err := runCmdAllowExit1("flatpak", "remote-ls", "--updates", "--columns=application,version,branch")
+	if err != nil || len(out) == 0 {
+		return nil, nil
+	}
+
+	var results []UpdatablePackage
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) > 0 {
+			name := parts[0]
+			ver := ""
+			if len(parts) > 1 {
+				ver = parts[1]
+			}
+			results = append(results, UpdatablePackage{
+				Name:       name,
+				OldVersion: "installed",
+				NewVersion: ver,
+				Manager:    "flatpak",
+			})
+		}
+	}
+	return results, nil
+}
+
 func (p *Flatpak) Search(query string) ([]Package, error) {
 	installedMap := make(map[string]bool)
 	if instOut, err := runCmdAllowExit1("flatpak", "list", "--app", "--columns=application:f"); err == nil {

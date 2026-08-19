@@ -26,6 +26,13 @@ type Package struct {
 	IsInstalled   bool
 }
 
+type UpdatablePackage struct {
+	Name       string
+	OldVersion string
+	NewVersion string
+	Manager    string
+}
+
 type Manager interface {
 	Name() string
 	ListAll() ([]Package, error)
@@ -36,6 +43,7 @@ type Manager interface {
 	InstallCmd(name string) []string
 	UpdateCmd() []string
 	UpdatePackagesCmd(names []string) []string
+	GetUpdatable() ([]UpdatablePackage, error)
 	Search(query string) ([]Package, error)
 	// RequiresSudo reports whether install/uninstall/update commands must be run
 	// through sudo. Pacman always does; Flatpak manages its own
