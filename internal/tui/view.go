@@ -141,7 +141,7 @@ func (m Model) renderUpdateModal() string {
 	for _, mgr := range m.managers {
 		allMgrNames = append(allMgrNames, mgrDisplayName(mgr.Name()))
 	}
-	allMgrsStr := strings.Join(allMgrNames, " + ")
+	// allMgrsStr := strings.Join(allMgrNames, " + ")
 
 	var sb strings.Builder
 	title := "Update Packages"
@@ -176,8 +176,8 @@ func (m Model) renderUpdateModal() string {
 		if len(m.updateTargets) > 0 {
 			renderTargetList()
 		} else {
-			sb.WriteString(styleVal.Render("Ready to perform a full system upgrade across all package managers:\n") +
-				styleAILabel.Render("  "+allMgrsStr) + "\n\n")
+			sb.WriteString(styleVal.Render("Ready to perform a full system upgrade across all package managers:\n"))
+			// styleAILabel.Render("  "+allMgrsStr) + "\n\n")
 		}
 		sb.WriteString(styleAILabel.Render("sudo password") + "\n")
 		sb.WriteString(m.updatePasswordInput.View() + "\n\n")
