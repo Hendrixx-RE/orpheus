@@ -566,9 +566,8 @@ func (m Model) renderInstallModal() string {
 
 		// Scroll indicator
 		if count > listH {
-			pct := int(float64(m.installResultsCursor) / float64(count-1) * 100)
 			sb.WriteString(styleDimmed.Render(
-				fmt.Sprintf("\n  %d/%d  %d%%", m.installResultsCursor+1, count, pct)))
+				fmt.Sprintf("\n  %d/%d", m.installResultsCursor+1, count)))
 		}
 
 		sb.WriteString("\n\n" + styleDimmed.Render("j/k navigate  |  ") +
@@ -726,8 +725,7 @@ func (m Model) renderPackageList(w, h int) string {
 
 	// scroll indicator
 	if len(pkgs) > visible {
-		pct := int(float64(m.listCursor) / float64(len(pkgs)-1) * 100)
-		sb.WriteString(styleDimmed.Render(fmt.Sprintf("\n  %d/%d  %d%%", m.listCursor+1, len(pkgs), pct)))
+		sb.WriteString(styleDimmed.Render(fmt.Sprintf("\n  %d/%d", m.listCursor+1, len(pkgs))))
 	}
 
 	return sb.String()
