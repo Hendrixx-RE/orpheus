@@ -7,7 +7,7 @@
 
 *Browse, inspect, AI-analyze, search, install, update, and batch-uninstall packages across multiple package managers (Pacman, AUR, Flatpak) — all from one unified, reactive TUI.*
 
-![Packichu Dashboard](https://github.com/user-attachments/assets/0837cbbd-aee3-43c3-b7b2-ca40ec37db53)
+https://github.com/user-attachments/assets/3e0c4ca7-8136-41c5-899f-b20bac0c07c1
 
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
 [![Bubble Tea](https://img.shields.io/badge/Bubble_Tea-TUI-FF75B5?style=flat-square)](https://github.com/charmbracelet/bubbletea)
