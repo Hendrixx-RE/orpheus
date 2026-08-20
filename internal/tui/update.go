@@ -27,9 +27,70 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.detailVP = viewport.New(maxI(10, m.detailWidth()-6), m.detailViewportHeight())
 		m.installOutputVP = viewport.New(minI(60, maxI(20, m.width-12)), 6)
-		m.updateOutputVP.Width = minI(66, maxI(20, m.width-12))
+		modalW := minI(76, maxI(36, m.width-4))
+		innerW := modalW - 8 - 2
+		vpHeight := minI(10, maxI(4, m.height-16))
+		m.updateOutputVP.Width = innerW
+		m.updateOutputVP.Height = vpHeight
+		m.updateAIVP.Width = innerW
+		m.updateAIVP.Height = vpHeight
+		m.cleanCacheOutputVP.Width = innerW
+		m.cleanCacheOutputVP.Height = vpHeight
+		if m.updateAIText != "" {
+			m.updateAIVP.SetContent(wrapText(m.updateAIText, innerW))
+		}
 		m.syncCurrentPkgDetail()
 		m.ready = true
+		return m, nil
+
+	case allUpdatablesCheckedMsg:
+		m.checkingUpdatables = false
+		m.updatables = msg.updatables
+		m.updatableMap = make(map[string]pm.UpdatablePackage)
+		for _, list := range msg.updatables {
+			for _, item := range list {
+				m.updatableMap[item.Name] = item
+			}
+		}
+		if m.showUpdatableOnly {
+			m.applyFilter()
+		}
+		return m, m.syncCurrentPkgDetail()
+
+	case aiUpdateAnalysisMsg:
+		m.updateAILoading = false
+		if msg.err != nil {
+			m.updateAIErr = "AI unavailable: " + msg.err.Error()
+			m.updateAIText = ""
+		} else {
+			m.updateAIText = msg.text
+			m.updateAIErr = ""
+			modalW := minI(76, maxI(36, m.width-4))
+			innerW := modalW - 8 - 2
+			vpHeight := minI(10, maxI(4, m.height-16))
+			m.updateAIVP.Width = innerW
+			m.updateAIVP.Height = vpHeight
+			m.updateAIVP.SetContent(wrapText(msg.text, innerW))
+			m.updateAIVP.GotoTop()
+		}
+		return m, nil
+
+	case cleanCacheOutputMsg:
+		m.cleanCacheLoading = false
+		m.cleanCacheOutput = msg.output
+		modalW := minI(70, maxI(36, m.width-4))
+		innerW := modalW - 8 - 2
+		vpHeight := minI(10, maxI(4, m.height-16))
+		m.cleanCacheOutputVP.Width = innerW
+		m.cleanCacheOutputVP.Height = vpHeight
+		if msg.err != nil {
+			m.cleanCacheErr = msg.err.Error()
+			m.cleanCacheOutputVP.SetContent(wrapText(msg.output, innerW))
+		} else {
+			m.cleanCacheDone = true
+			m.cleanCacheOutputVP.SetContent(wrapText(msg.output, innerW))
+		}
+		m.cleanCacheOutputVP.GotoTop()
 		return m, nil
 
 	case spinner.TickMsg:
@@ -242,7 +303,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key == "ctrl+c" {
 			return m, tea.Quit
 		}
-		if key == "q" && !m.searching && !m.askingPassword && !m.installingModal && !m.updatingModal {
+		if key == "q" && !m.searching && !m.askingPassword && !m.installingModal && !m.updatingModal && !m.cleanCacheModal {
 			return m, tea.Quit
 		}
 
@@ -254,6 +315,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// --- Update modal input handling ---
 		if m.updatingModal {
 			return m.handleUpdateModalKey(key, msg)
+		}
+
+		// --- Clean cache modal input handling ---
+		if m.cleanCacheModal {
+			return m.handleCleanCacheModalKey(key, msg)
 		}
 
 		if m.askingPassword {
@@ -480,6 +546,8 @@ func (m Model) handleDetailKey(key string) (Model, tea.Cmd) {
 		return m, nil
 	case "o":
 		return m, m.startOrphanRemoval()
+	case "c":
+		return m.startCleanCache()
 	case "i":
 		return m.startInstall()
 	case "t":
@@ -523,6 +591,8 @@ func (m Model) handleSidebarKey(key string) (Model, tea.Cmd) {
 		return m, loadPackages(m.managers[m.activeMgr])
 	case "o":
 		return m, m.startOrphanRemoval()
+	case "c":
+		return m.startCleanCache()
 	case "i":
 		return m.startInstall()
 	case "t":
@@ -649,15 +719,25 @@ func (m Model) handleListKey(key string) (Model, tea.Cmd) {
 		return m, cmd
 	case "r":
 		m.loading = true
+		m.checkingUpdatables = true
 		if m.syncCancel != nil {
 			m.syncCancel()
 		}
 		m.syncChan = nil
 		m.syncActive = false
 		m.lastKey = ""
-		return m, loadPackages(m.managers[m.activeMgr])
+		return m, tea.Batch(loadPackages(m.managers[m.activeMgr]), checkAllUpdatables(m.managers))
+	case "f", "F":
+		m.showUpdatableOnly = !m.showUpdatableOnly
+		m.applyFilter()
+		m.listCursor = 0
+		cmd := m.syncCurrentPkgDetail()
+		m.lastKey = ""
+		return m, cmd
 	case "o":
 		return m, m.startOrphanRemoval()
+	case "c":
+		return m.startCleanCache()
 	case "i":
 		return m.startInstall()
 	case "t":
@@ -1551,6 +1631,10 @@ func (m Model) resetUpdateModal() Model {
 	m.updateOutput = ""
 	m.updateDone = false
 	m.updateTargets = nil
+	m.updateShowAIPreview = false
+	m.updateAIText = ""
+	m.updateAILoading = false
+	m.updateAIErr = ""
 	m.updatePasswordInput.SetValue("")
 	m.updatePasswordInput.Blur()
 	return m
@@ -1564,29 +1648,14 @@ func (m Model) startFullUpgrade() (Model, tea.Cmd) {
 	m.updatingModal = true
 	m.updateTargets = nil // nil = full system upgrade across all managers
 
-	const modalW = 76
-	const innerW = modalW - 8 - 2
+	modalW := minI(76, maxI(36, m.width-4))
+	innerW := modalW - 8 - 2
+	vpHeight := minI(10, maxI(4, m.height-16))
 	m.updateOutputVP.Width = innerW
-	m.updateOutputVP.Height = 10
+	m.updateOutputVP.Height = vpHeight
+	m.updateAIVP = viewport.New(innerW, vpHeight)
 
-	needsSudo := false
-	for _, mgr := range m.managers {
-		if mgr.RequiresSudo() {
-			needsSudo = true
-			break
-		}
-	}
-
-	if needsSudo {
-		m.updateAskPassword = true
-		m.updatePasswordInput.Focus()
-		m.updatePasswordInput.SetValue("")
-		return m, textinput.Blink
-	}
-
-	// No manager requires sudo: run directly
-	m.updatingLoading = true
-	return m, updateAllManagersCmdAsync(m.managers, "", false)
+	return m, nil
 }
 
 func (m Model) startUpdate() (Model, tea.Cmd) {
@@ -1601,24 +1670,15 @@ func (m Model) startUpdate() (Model, tea.Cmd) {
 	m = m.resetUpdateModal()
 	m.updatingModal = true
 	m.updateTargets = targets
-	activeMgr := m.managers[m.activeMgr]
 
-	const modalW = 76
-	const innerW = modalW - 8 - 2
+	modalW := minI(76, maxI(36, m.width-4))
+	innerW := modalW - 8 - 2
+	vpHeight := minI(10, maxI(4, m.height-16))
 	m.updateOutputVP.Width = innerW
-	m.updateOutputVP.Height = 10
+	m.updateOutputVP.Height = vpHeight
+	m.updateAIVP = viewport.New(innerW, vpHeight)
 
-	if activeMgr.RequiresSudo() {
-		m.updateAskPassword = true
-		m.updatePasswordInput.Focus()
-		m.updatePasswordInput.SetValue("")
-		return m, textinput.Blink
-	}
-
-	// Flatpak / non-sudo: run directly without password
-	m.updatingLoading = true
-	cmdArgs := activeMgr.UpdatePackagesCmd(m.updateTargets)
-	return m, updatePackageCmdAsync(cmdArgs, "", false)
+	return m, nil
 }
 
 func (m Model) handleUpdateModalKey(key string, msg tea.KeyMsg) (Model, tea.Cmd) {
@@ -1626,7 +1686,9 @@ func (m Model) handleUpdateModalKey(key string, msg tea.KeyMsg) (Model, tea.Cmd)
 	if m.updateAskPassword {
 		switch key {
 		case "esc":
-			m = m.resetUpdateModal()
+			m.updateAskPassword = false
+			m.updatePasswordInput.Blur()
+			m.updatePasswordInput.SetValue("")
 			return m, nil
 		case "enter":
 			pw := strings.TrimSpace(m.updatePasswordInput.Value())
@@ -1666,7 +1728,7 @@ func (m Model) handleUpdateModalKey(key string, msg tea.KeyMsg) (Model, tea.Cmd)
 			m.loading = true
 			m.selectedPkg = nil
 			m.focusedPanel = panelList
-			return m, loadPackages(m.managers[m.activeMgr])
+			return m, tea.Batch(loadPackages(m.managers[m.activeMgr]), checkAllUpdatables(m.managers))
 		case "j", "down":
 			m.updateOutputVP.ScrollDown(1)
 		case "k", "up":
@@ -1686,6 +1748,80 @@ func (m Model) handleUpdateModalKey(key string, msg tea.KeyMsg) (Model, tea.Cmd)
 			}
 		}
 		return m, nil
+	}
+
+	// Phase: AI changelog loading
+	if m.updateAILoading {
+		if key == "esc" {
+			m.updateAILoading = false
+			m.updateShowAIPreview = false
+			return m, nil
+		}
+		return m, nil
+	}
+
+	// Phase: Confirmation / Options / AI preview view
+	switch key {
+	case "esc":
+		if m.updateShowAIPreview {
+			m.updateShowAIPreview = false
+			return m, nil
+		}
+		m = m.resetUpdateModal()
+		return m, nil
+	case "a", "A":
+		m.updateShowAIPreview = true
+		m.updateAILoading = true
+		m.updateAIErr = ""
+		m.updateAIText = ""
+		return m, analyzeUpdateChangelogCmd(m.aiSvc, m.cache, m.updateTargets, m.updatableMap)
+	case "j", "down":
+		if m.updateShowAIPreview {
+			m.updateAIVP.ScrollDown(1)
+		}
+	case "k", "up":
+		if m.updateShowAIPreview {
+			m.updateAIVP.ScrollUp(1)
+		}
+	case "ctrl+d":
+		if m.updateShowAIPreview {
+			m.updateAIVP.HalfPageDown()
+		}
+	case "ctrl+u":
+		if m.updateShowAIPreview {
+			m.updateAIVP.HalfPageUp()
+		}
+	case "enter":
+		// Proceed to update execution
+		if len(m.updateTargets) > 0 {
+			activeMgr := m.managers[m.activeMgr]
+			if activeMgr.RequiresSudo() {
+				m.updateAskPassword = true
+				m.updatePasswordInput.Focus()
+				m.updatePasswordInput.SetValue("")
+				return m, textinput.Blink
+			}
+			m.updatingLoading = true
+			cmdArgs := activeMgr.UpdatePackagesCmd(m.updateTargets)
+			return m, updatePackageCmdAsync(cmdArgs, "", false)
+		}
+
+		// Full upgrade across all managers
+		needsSudo := false
+		for _, mgr := range m.managers {
+			if mgr.RequiresSudo() {
+				needsSudo = true
+				break
+			}
+		}
+		if needsSudo {
+			m.updateAskPassword = true
+			m.updatePasswordInput.Focus()
+			m.updatePasswordInput.SetValue("")
+			return m, textinput.Blink
+		}
+		m.updatingLoading = true
+		return m, updateAllManagersCmdAsync(m.managers, "", false)
 	}
 
 	return m, nil
@@ -1794,5 +1930,149 @@ func updateAllManagersCmdAsync(managers []pm.Manager, password string, needsSudo
 			err:    nil,
 			output: strings.TrimSpace(fullOutput.String()),
 		}
+	}
+}
+
+func (m Model) resetCleanCacheModal() Model {
+	m.cleanCacheModal = false
+	m.cleanCacheAskPassword = false
+	m.cleanCacheLoading = false
+	m.cleanCacheErr = ""
+	m.cleanCacheOutput = ""
+	m.cleanCacheDone = false
+	m.cleanCachePasswordInput.SetValue("")
+	m.cleanCachePasswordInput.Blur()
+	return m
+}
+
+func (m Model) startCleanCache() (Model, tea.Cmd) {
+	if m.cleanCacheLoading || m.updatingLoading || m.installingLoading || m.removingLoading {
+		return m, nil
+	}
+	m = m.resetCleanCacheModal()
+	m.cleanCacheModal = true
+
+	modalW := minI(70, maxI(36, m.width-4))
+	innerW := modalW - 8 - 2
+	vpHeight := minI(10, maxI(4, m.height-16))
+	m.cleanCacheOutputVP.Width = innerW
+	m.cleanCacheOutputVP.Height = vpHeight
+
+	return m, nil
+}
+
+func (m Model) handleCleanCacheModalKey(key string, msg tea.KeyMsg) (Model, tea.Cmd) {
+	// Phase: password input
+	if m.cleanCacheAskPassword {
+		switch key {
+		case "esc":
+			m = m.resetCleanCacheModal()
+			return m, nil
+		case "enter":
+			pw := strings.TrimSpace(m.cleanCachePasswordInput.Value())
+			if pw == "" {
+				return m, nil
+			}
+			m.cleanCacheAskPassword = false
+			m.cleanCacheLoading = true
+			m.cleanCachePasswordInput.Blur()
+			m.cleanCachePasswordInput.SetValue("")
+
+			activeMgr := m.managers[m.activeMgr]
+			cmdArgs := activeMgr.CleanCacheCmd()
+			return m, cleanCacheCmdAsync(cmdArgs, pw, activeMgr.RequiresSudo())
+		default:
+			var cmd tea.Cmd
+			m.cleanCachePasswordInput, cmd = m.cleanCachePasswordInput.Update(msg)
+			return m, cmd
+		}
+	}
+
+	// Phase: loading (cleaning in progress)
+	if m.cleanCacheLoading {
+		return m, nil
+	}
+
+	// Phase: done or error output viewport
+	if m.cleanCacheDone || m.cleanCacheErr != "" {
+		switch key {
+		case "enter", "esc", "q":
+			m = m.resetCleanCacheModal()
+			return m, nil
+		case "j", "down":
+			m.cleanCacheOutputVP.ScrollDown(1)
+		case "k", "up":
+			m.cleanCacheOutputVP.ScrollUp(1)
+		case "ctrl+d":
+			m.cleanCacheOutputVP.HalfPageDown()
+		case "ctrl+u":
+			m.cleanCacheOutputVP.HalfPageUp()
+		case "G":
+			m.cleanCacheOutputVP.GotoBottom()
+		case "g":
+			if m.lastKey == "g" {
+				m.cleanCacheOutputVP.GotoTop()
+				m.lastKey = ""
+			} else {
+				m.lastKey = "g"
+			}
+		}
+		return m, nil
+	}
+
+	// Phase: initial confirmation
+	switch key {
+	case "esc":
+		m = m.resetCleanCacheModal()
+		return m, nil
+	case "enter":
+		activeMgr := m.managers[m.activeMgr]
+		if activeMgr.RequiresSudo() {
+			m.cleanCacheAskPassword = true
+			m.cleanCachePasswordInput.Focus()
+			m.cleanCachePasswordInput.SetValue("")
+			return m, textinput.Blink
+		}
+		m.cleanCacheLoading = true
+		cmdArgs := activeMgr.CleanCacheCmd()
+		return m, cleanCacheCmdAsync(cmdArgs, "", false)
+	}
+
+	return m, nil
+}
+
+func cleanCacheCmdAsync(cmdArgs []string, password string, needsSudo bool) tea.Cmd {
+	return func() tea.Msg {
+		if needsSudo {
+			_ = exec.Command("sudo", "-k").Run()
+			vCmd := exec.Command("sudo", "-S", "-v")
+			vCmd.Stdin = strings.NewReader(password + "\n")
+			if vOut, err := vCmd.CombinedOutput(); err != nil {
+				return cleanCacheOutputMsg{err: fmt.Errorf("incorrect sudo password: %s", strings.TrimSpace(string(vOut))), output: string(vOut)}
+			}
+		}
+
+		var c *exec.Cmd
+		if needsSudo {
+			if cmdArgs[0] == "pacman" {
+				args := append([]string{"-S"}, cmdArgs...)
+				c = exec.Command("sudo", args...)
+				c.Stdin = strings.NewReader(password + "\n")
+			} else {
+				c = exec.Command(cmdArgs[0], cmdArgs[1:]...)
+			}
+		} else {
+			if len(cmdArgs) >= 3 && cmdArgs[0] == "sh" && cmdArgs[1] == "-c" {
+				c = exec.Command("sh", "-c", cmdArgs[2])
+			} else {
+				c = exec.Command(cmdArgs[0], cmdArgs[1:]...)
+			}
+		}
+
+		out, err := c.CombinedOutput()
+		if err != nil {
+			return cleanCacheOutputMsg{err: fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out))), output: string(out)}
+		}
+		return cleanCacheOutputMsg{output: string(out)}
 	}
 }

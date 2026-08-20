@@ -57,7 +57,7 @@ type syncProgressMsg struct {
 	DoneAll bool
 }
 
-// aiSearchResultMsg is sent when your ripgrep logic finishes
+// aiSearchResultMsg is sent when semantic AI search finishes
 type aiSearchResultMsg struct {
 	PkgNames []string
 	Err      error
@@ -66,4 +66,18 @@ type aiSearchResultMsg struct {
 type orphansCheckedMsg struct {
 	orphans []string
 	err     error
+}
+
+type allUpdatablesCheckedMsg struct {
+	updatables map[string][]pm.UpdatablePackage
+}
+
+type aiUpdateAnalysisMsg struct {
+	text string
+	err  error
+}
+
+type cleanCacheOutputMsg struct {
+	err    error
+	output string
 }

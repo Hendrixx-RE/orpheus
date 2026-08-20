@@ -5,6 +5,7 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"sync"
 
 	"packichu/internal/ai"
 	"packichu/internal/cache"
@@ -110,6 +111,29 @@ type Model struct {
 	updateDone          bool
 	updateTargets       []string
 
+	// update changelog AI preview
+	updateShowAIPreview bool
+	updateAIText        string
+	updateAILoading     bool
+	updateAIErr         string
+	updateAIVP          viewport.Model
+
+	// clean cache modal
+	cleanCacheModal         bool
+	cleanCacheAskPassword   bool
+	cleanCachePasswordInput textinput.Model
+	cleanCacheLoading       bool
+	cleanCacheErr           string
+	cleanCacheOutput        string
+	cleanCacheOutputVP      viewport.Model
+	cleanCacheDone          bool
+
+	// updatable package detection & filter
+	updatables         map[string][]pm.UpdatablePackage // mgrName -> []UpdatablePackage
+	updatableMap       map[string]pm.UpdatablePackage   // pkgName -> UpdatablePackage
+	showUpdatableOnly  bool
+	checkingUpdatables bool
+
 	spinner spinner.Model
 	lastKey string
 
@@ -169,28 +193,46 @@ func New() Model {
 	upi.TextStyle = lipgloss.NewStyle().Foreground(colorText)
 	upi.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
 
+	cpi := textinput.New()
+	cpi.Placeholder = "sudo password..."
+	cpi.EchoMode = textinput.EchoPassword
+	cpi.EchoCharacter = '•'
+	cpi.CharLimit = 64
+	cpi.Prompt = " "
+	cpi.PromptStyle = lipgloss.NewStyle().Foreground(colorYellow)
+	cpi.TextStyle = lipgloss.NewStyle().Foreground(colorText)
+	cpi.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
+
 	vp := viewport.New(0, 0)
 	ivp := viewport.New(0, 0)
 	uvp := viewport.New(0, 0)
+	uaivp := viewport.New(0, 0)
+	cvp := viewport.New(0, 0)
 
 	c, _ := cache.New()
 
 	return Model{
-		spinner:              sp,
-		searchInput:          ti,
-		passwordInput:        pi,
-		installPkgInput:      ii,
-		installPasswordInput: ipi,
-		updatePasswordInput:  upi,
-		detailVP:             vp,
-		installOutputVP:      ivp,
-		updateOutputVP:       uvp,
-		loading:              true,
-		selectedPkgs:         make(map[string]bool),
-		managers:             pm.DetectManagers(),
-		activeMgr:            0,
-		aiSvc:                ai.New(),
-		cache:                c,
+		spinner:                 sp,
+		searchInput:             ti,
+		passwordInput:           pi,
+		installPkgInput:         ii,
+		installPasswordInput:    ipi,
+		updatePasswordInput:     upi,
+		cleanCachePasswordInput: cpi,
+		detailVP:                vp,
+		installOutputVP:         ivp,
+		updateOutputVP:          uvp,
+		updateAIVP:             uaivp,
+		cleanCacheOutputVP:      cvp,
+		loading:                 true,
+		selectedPkgs:            make(map[string]bool),
+		managers:                pm.DetectManagers(),
+		activeMgr:               0,
+		aiSvc:                   ai.New(),
+		cache:                   c,
+		updatables:              make(map[string][]pm.UpdatablePackage),
+		updatableMap:            make(map[string]pm.UpdatablePackage),
+		checkingUpdatables:      true,
 	}
 }
 
@@ -198,10 +240,69 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
 		loadPackages(m.managers[m.activeMgr]),
+		checkAllUpdatables(m.managers),
 	)
 }
 
 // commands
+
+func checkAllUpdatables(managers []pm.Manager) tea.Cmd {
+	return func() tea.Msg {
+		result := make(map[string][]pm.UpdatablePackage)
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+
+		for _, mgr := range managers {
+			wg.Add(1)
+			go func(m pm.Manager) {
+				defer wg.Done()
+				items, err := m.GetUpdatable()
+				if err == nil && len(items) > 0 {
+					mu.Lock()
+					result[m.Name()] = items
+					mu.Unlock()
+				}
+			}(mgr)
+		}
+		wg.Wait()
+		return allUpdatablesCheckedMsg{updatables: result}
+	}
+}
+
+func analyzeUpdateChangelogCmd(a *ai.Analyzer, c *cache.Cache, targets []string, updatableMap map[string]pm.UpdatablePackage) tea.Cmd {
+	return func() tea.Msg {
+		var upList []pm.UpdatablePackage
+		if len(targets) > 0 {
+			for _, name := range targets {
+				if u, ok := updatableMap[name]; ok {
+					upList = append(upList, u)
+				} else {
+					upList = append(upList, pm.UpdatablePackage{
+						Name:       name,
+						OldVersion: "installed",
+						NewVersion: "latest",
+						Manager:    "package",
+					})
+				}
+			}
+		} else {
+			for _, u := range updatableMap {
+				upList = append(upList, u)
+			}
+			if len(upList) == 0 {
+				upList = append(upList, pm.UpdatablePackage{
+					Name:       "system",
+					OldVersion: "current",
+					NewVersion: "latest",
+					Manager:    "all",
+				})
+			}
+		}
+
+		text, err := a.AnalyzeUpdateChangelog(context.Background(), upList)
+		return aiUpdateAnalysisMsg{text: text, err: err}
+	}
+}
 
 func loadPackages(mgr pm.Manager) tea.Cmd {
 	return func() tea.Msg {
@@ -246,9 +347,15 @@ func (m *Model) applyFilter() {
 	if q == "" {
 		var out []pm.Package
 		for _, p := range m.allPkgs {
-			if p.InstallReason == "Explicitly installed" {
-				out = append(out, p)
+			if p.InstallReason != "Explicitly installed" {
+				continue
 			}
+			if m.showUpdatableOnly {
+				if _, ok := m.updatableMap[p.Name]; !ok {
+					continue
+				}
+			}
+			out = append(out, p)
 		}
 		switch m.sortMode {
 		case sortBySize:
@@ -276,6 +383,11 @@ func (m *Model) applyFilter() {
 	for _, p := range m.allPkgs {
 		if p.InstallReason != "Explicitly installed" {
 			continue
+		}
+		if m.showUpdatableOnly {
+			if _, ok := m.updatableMap[p.Name]; !ok {
+				continue
+			}
 		}
 
 		nameLower := toLower(p.Name)

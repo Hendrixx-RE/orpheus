@@ -44,6 +44,7 @@ type Manager interface {
 	UpdateCmd() []string
 	UpdatePackagesCmd(names []string) []string
 	GetUpdatable() ([]UpdatablePackage, error)
+	CleanCacheCmd() []string
 	Search(query string) ([]Package, error)
 	// RequiresSudo reports whether install/uninstall/update commands must be run
 	// through sudo. Pacman always does; Flatpak manages its own

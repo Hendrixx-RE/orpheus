@@ -199,13 +199,15 @@ Packichu supports 3 complete, hot-swappable color palettes. Pressing **`t`** cyc
 | `t` | Global / List / Detail | **Cycle Theme: Gruvbox Retro → Catppuccin → Monokai** |
 | `x` | List / Detail | Remove highlighted or multi-selected package(s) |
 | `i` | Global | Open package search & installation modal |
-| `u` | List / Detail | Update selected package(s) |
+| `c` | Global / List / Detail / Sidebar | **Clean Package Cache** for active provider (Pacman, AUR, Flatpak) |
+| `u` | List / Detail | Update selected package(s) *(with optional AI Changelog preview `[a]`)* |
 | `U` | Global / List / Detail / Sidebar | **Full System Upgrade** across all detected package managers (Pacman + AUR + Flatpak) |
 | `o` | Global | Check and batch-clean orphan packages |
 | `a` | Detail / List | Force AI re-analysis for highlighted package |
+| `f` | List | **Toggle filter: Show Updatable Packages Only ↔ All Packages** |
 | `/` | List | Filter installed packages |
 | `s` | List | Cycle sort: **Name → Size → Install Date** |
-| `r` | List | Reload package list from active manager |
+| `r` | List | Reload package list & re-check updatable packages |
 | `q` | Global | Quit Packichu |
 
 #### Responsive Breakpoints

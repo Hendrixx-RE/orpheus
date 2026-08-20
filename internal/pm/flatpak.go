@@ -38,6 +38,11 @@ func (p *Flatpak) UpdatePackagesCmd(names []string) []string {
 	return []string{"sh", "-c", cmdStr}
 }
 
+func (p *Flatpak) CleanCacheCmd() []string {
+	cmdStr := "dbus-run-session flatpak uninstall --unused -y"
+	return []string{"sh", "-c", cmdStr}
+}
+
 func (p *Flatpak) GetUpdatable() ([]UpdatablePackage, error) {
 	out, err := runCmdAllowExit1("flatpak", "remote-ls", "--updates", "--columns=application,version,branch")
 	if err != nil || len(out) == 0 {

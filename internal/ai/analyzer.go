@@ -258,6 +258,71 @@ func (a *Analyzer) AnalyzeSummary(ctx context.Context, pkg *pm.Package) (string,
 	})
 }
 
+// AnalyzeUpdateChangelog generates a summary of what's new and changed in the latest package update(s).
+func (a *Analyzer) AnalyzeUpdateChangelog(ctx context.Context, updates []pm.UpdatablePackage) (string, error) {
+	if a.apiKey == "" {
+		return "", fmt.Errorf("%s API key not set in config", strings.ToUpper(string(a.provider)))
+	}
+	if len(updates) == 0 {
+		return "No packages specified for update analysis.", nil
+	}
+
+	var keyBuilder strings.Builder
+	keyBuilder.WriteString("changelog@")
+	for _, u := range updates {
+		keyBuilder.WriteString(u.Name + ":" + u.OldVersion + "->" + u.NewVersion + ";")
+	}
+	key := keyBuilder.String()
+
+	return a.sf.Do(key, func() (string, error) {
+		if err := a.waitRateLimit(ctx); err != nil {
+			return "", err
+		}
+
+		systemPrompt := "You are an expert Linux software analyst. Give a concise, structured summary of what is new, changed, and improved in the latest update for the requested package(s). Highlight notable new features, performance improvements, bug fixes, and any potential breaking changes to watch out for. Keep it clear, informative, and readable."
+
+		var userPrompt strings.Builder
+		if len(updates) == 1 {
+			u := updates[0]
+			oldV := u.OldVersion
+			if oldV == "" {
+				oldV = "current"
+			}
+			newV := u.NewVersion
+			if newV == "" {
+				newV = "latest"
+			}
+			userPrompt.WriteString(fmt.Sprintf("What is new and changed in the latest update for package '%s'?\nCurrent installed version: %s\nTarget update version: %s\nPackage manager: %s\n\nProvide a clear, structured summary of notable changes, new features, improvements, and any breaking changes or upgrade considerations.",
+				u.Name, oldV, newV, u.Manager))
+		} else {
+			userPrompt.WriteString("Summarize what's new and notable in the upcoming updates for these packages:\n\n")
+			for _, u := range updates {
+				oldV := u.OldVersion
+				if oldV == "" {
+					oldV = "current"
+				}
+				newV := u.NewVersion
+				if newV == "" {
+					newV = "latest"
+				}
+				userPrompt.WriteString(fmt.Sprintf("- %s: %s -> %s (%s)\n", u.Name, oldV, newV, u.Manager))
+			}
+			userPrompt.WriteString("\nFor each package, provide a brief 2-3 bullet point highlight of major changes, fixes, or improvements in this release.")
+		}
+
+		res, err := a.sendChatRequest(ctx, systemPrompt, userPrompt.String(), 2048)
+
+		a.mu.Lock()
+		a.lastReqTime = time.Now()
+		if err != nil && strings.Contains(err.Error(), "rate limited") {
+			a.rateLimitedUntil = time.Now().Add(30 * time.Second)
+		}
+		a.mu.Unlock()
+
+		return res, err
+	})
+}
+
 func (a *Analyzer) analyzeUncached(ctx context.Context, pkg *pm.Package, explicitNames []string) (string, error) {
 	systemPrompt := "You are a Linux package analyzer. Give concise, honest analysis. No markdown headers or bullet points. Plain text only."
 	userPrompt := buildPrompt(pkg, explicitNames)

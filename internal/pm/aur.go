@@ -73,6 +73,20 @@ func (a *AUR) UpdatePackagesCmd(names []string) []string {
 	return append([]string{h, "-S", "--noconfirm"}, names...)
 }
 
+func (a *AUR) CleanCacheCmd() []string {
+	h := a.helper
+	if h == "" {
+		h = "yay"
+	}
+	if h == "yay" {
+		return []string{h, "-Sc", "--noconfirm", "--sudoloop", "--answerclean=None", "--answerdiff=None", "--answeredit=None", "--answerupgrade=None"}
+	}
+	if h == "paru" {
+		return []string{h, "-Sc", "--noconfirm", "--sudoloop"}
+	}
+	return []string{"pacman", "-Sc", "--noconfirm"}
+}
+
 func (a *AUR) GetUpdatable() ([]UpdatablePackage, error) {
 	h := a.helper
 	if h == "" {
@@ -89,11 +103,15 @@ func (a *AUR) GetUpdatable() ([]UpdatablePackage, error) {
 	}
 
 	out, _ := cmd.Output()
+	explicitNames := getExplicitPackageNames(true)
+
 	var results []UpdatablePackage
 	scanner := bufio.NewScanner(bytes.NewReader(out))
 	for scanner.Scan() {
 		if u, ok := parseCheckupdatesLine(scanner.Text(), "aur"); ok {
-			results = append(results, u)
+			if explicitNames == nil || explicitNames[u.Name] {
+				results = append(results, u)
+			}
 		}
 	}
 	return results, nil

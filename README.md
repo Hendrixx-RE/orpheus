@@ -3,9 +3,9 @@
 
 # Packichu
 
-**A terminal-based package management dashboard for Arch Linux**
+**A terminal-based package management & AI system inspection dashboard for Arch Linux**
 
-*Browse, inspect, AI-analyze, search, install, update/batch update, and uninstall/batch uninstall packages across multiple package managers — all from one unified TUI.*
+*Browse, inspect, AI-analyze, search, install, update, and batch-uninstall packages across multiple package managers (Pacman, AUR, Flatpak) — all from one unified, reactive TUI.*
 
 ![Packichu Dashboard](https://github.com/user-attachments/assets/0837cbbd-aee3-43c3-b7b2-ca40ec37db53)
 
@@ -17,146 +17,188 @@
 
 ---
 
-##  Why Packichu?
+## Why Packichu?
 
-Your system accumulates packages over time. Some you installed months ago and forgot about. Some are 500 MB chonks you used once. Some are mysterious dependencies you're not even sure what they do anymore.
+Over time, an Arch system accumulates hundreds of packages. Some were installed months ago and forgotten; some are multi-gigabyte build toolchains used once; others are mysterious dependencies where it's unclear if removing them will break your desktop environment.
 
-**Packichu gives you total clarity and control.** It pulls every explicitly installed package from Pacman/AUR and Flatpak into a single dashboard, lets an AI analyze safety and system context, and provides one-key workflows for installing, updating, orphan cleaning, and batch uninstallation.
-
----
-
-##  Features
-
-###  Three-Panel Dashboard
-A clean, vim-navigable interface:
-- **Sidebar (Left)**: Switch between package managers (Pacman, Flatpak) and view high-level counts.
-- **Package List (Middle)**: Real-time filtering, virtual scrolling, selection badges, and size formatting.
-- **Detail Panel (Right)**: Comprehensive package metadata, dependencies, action status, and AI insights.
-
-###  Multi-Manager Operations (Auto-Detected)
-Packichu inspects your machine and automatically activates only the package managers present on your system:
-| Manager | What It Lists | Install / Search | Full Upgrade (`U`) | Uninstall Strategy |
-|---|---|---|---|---|
-| **Pacman** | Official Arch packages (`pacman -Qin`) | Official Repos (`[core]`, `[extra]`, `[multilib]`) | `pacman -Syu --noconfirm` | `pacman -Rns --noconfirm` (recursive dependency removal) |
-| **AUR** | Foreign/AUR packages (`pacman -Qim`) | Arch User Repository (`yay -Ssa` / `paru -Ssa`) | `yay -Sua --noconfirm` / `paru -Sua` | `pacman -Rns --noconfirm` |
-| **Flatpak** | Installed Flatpak desktop applications | Configured Flatpak remotes (Flathub, etc.) | `flatpak update -y` | Uninstalls app + deletes data + cleans unused runtimes |
-
-###  AI-Powered Package Analysis
-Packichu leverages AI to deliver context-aware intelligence for your installed packages. A background worker automatically scans and analyzes all your explicitly installed packages asynchronously — you don't even need to press `a` (though you can use `a` to force a re-analysis). Any major AI provider (Gemini, Groq, OpenAI, Anthropic) can be used just by dropping your API key into `~/.config/packichu/config.env`!
-- **Purpose**: What the package does on *your* machine.
-- **Context Inference**: Explains *why* you likely installed it based on your other installed packages (e.g., knowing you have `neovim` helps it infer why `lua51` exists).
-- **Safety Verdict**: Clear `[KEEP]`, `[CAUTION]`, or `[SAFE]` verdict for removals.
-- **Launch Command**: Extracts and displays terminal launch commands (`Command: ...`).
-- **Deduplicated & Cached**: Singleflight concurrency deduplication and permanent package-name caching ensure network requests are never repeated for cached packages (even across system upgrades).
-
-###  Fuzzy Search & Package Installation (`i`)
-- Press `i` to open the interactive **Install Modal**.
-- Live fuzzy searching powered by multi-token matching, subsequence scoring, and repository weighting (`[core]` > `[extra]` > `[multilib]` > `[aur]`).
-- Press `Tab` inside search results to view package descriptions and AI-generated quick summaries before installing.
-- Direct installation for official repositories and AUR packages via `yay`/`paru` or `pacman`.
-
-###  Full System Upgrade (`U`) & Package Update (`u`)
-- **Full Upgrade (`U`)**: Press `U` in any panel (or `u`/`U` in the sidebar) to trigger a full system/manager upgrade (`yay -Syu` / `pacman -Syu` / `flatpak update -y`) with real-time log streaming.
-- **Targeted Update (`u`)**: Press `u` on highlighted or multi-selected packages to update only those specific packages.
-
-###  Orphan Package Cleanup (`o`)
-- Press `o` to detect all orphaned dependencies (`pacman -Qtdq`).
-- Batch remove all unused orphans in a single operation.
-
-###  Yazi-Style Multi-Selection & Batch Removal (`x`)
-- `Space`: Toggle individual package selection.
-- `v`: Enter **Visual Mode** — select a contiguous range with `j`/`k`.
-- `x`: Batch uninstall all selected packages in a single privileged `sudo` transaction.
-
-###  Persistent Cache
-Analysis results are saved locally to `~/.cache/packichu/analysis.json` in clean, human-readable JSON. Analyze once, read instantly forever.
+**Packichu gives you total clarity and control.** It scans your system across **Pacman, AUR, and Flatpak**, analyzes each package with your choice of AI provider (Google Gemini, Groq, OpenAI, Anthropic) in the background, and gives you fast, keyboard-driven workflows to install, update, clean caches, remove orphans, and batch-uninstall safely.
 
 ---
 
-##  Keybindings
+## Features
 
-Packichu uses intuitive **vim-style keybindings** throughout. The status bar at the bottom always displays context-sensitive shortcuts.
-
-### Global & Navigation
-| Key | Action |
-|---|---|
-| `j` / `k` / `↓` / `↑` | Move down / up (details auto-display for hovered package) |
-| `h` / `l` / `←` / `→` | Switch panel focus (Sidebar ↔ List ↔ Detail scroll) |
-| `Ctrl+D` / `Ctrl+U` | Half-page down / up |
-| `G` | Jump to bottom |
-| `gg` | Jump to top |
-| `Tab` | Switch active package manager (Pacman ↔ AUR ↔ Flatpak) |
-| `l` / `Enter` | Focus detail panel (scroll view) / confirm modal |
-| `Esc` | Clear visual selection / cancel / exit search / back |
-| `q` | Quit Packichu |
-
-### Selection & Filtering
-| Key | Action |
-|---|---|
-| `Space` | Toggle package selection |
-| `v` | Visual range selection mode |
-| `/` | Live filter / search installed packages |
-| `s` | Cycle sort: **Name → Size → Install Date** |
-| `t` | Cycle theme: **Gruvbox Retro → Catppuccin → Monokai** |
-| `r` | Reload package list from active manager |
-
-### Package Actions
-| Key | Action |
-|---|---|
-| `a` | Trigger AI analysis for selected package |
-| `x` | Remove highlighted or multi-selected packages |
-| `i` | Open Package Search & Install modal (Official repos, AUR, Flatpak) |
-| `u` | Update highlighted or selected package(s) |
-| `U` | **Full System Upgrade** across all detected package managers (Pacman + AUR + Flatpak) |
-| `o` | Orphan packages inspection and cleanup |
+### Responsive Three-Panel Dashboard
+- **Sidebar (Left)**: Switch between package managers (Pacman, AUR, Flatpak), view total package counts, and check pending update counts per provider.
+- **Package List (Middle)**: Real-time filtering, virtual scrolling, selection checkmarks, update indicators (`▲`), and formatted package sizes.
+- **Detail Panel (Right)**: Comprehensive metadata (version, architecture, install reason, explicit vs. dependency status, size, dependencies, optional dependencies), highlighted terminal launch commands, safety verdicts, and full AI analysis.
+- **Adaptive Layout**: Automatically switches between a 3-Panel view (`≥ 105 cols`), 2-Panel view (`80–104 cols`), and Compact 1-Panel focus view (`< 80 cols`).
 
 ---
 
-##  Installation
+### Multi-Manager Operations (Auto-Detected)
+Packichu automatically detects available package managers on your host system:
+
+| Manager | Source | Install / Search | Full Upgrade (`U`) | Cache Clean (`c`) | Uninstall Strategy |
+|---|---|---|---|---|---|
+| **Pacman** | Native Arch official repos (`[core]`, `[extra]`, `[multilib]`) | Official Repositories | `pacman -Syu --noconfirm` | `pacman -Sc --noconfirm` | `pacman -Rns --noconfirm` (recursive dependency removal) |
+| **AUR** | Foreign / Arch User Repository (`pacman -Qim`) | AUR via `yay` or `paru` | `yay -Sua` / `paru -Sua` | `yay -Sc` / `paru -Sc` | `pacman -Rns --noconfirm` |
+| **Flatpak** | User & system Flatpak apps | Flathub & configured remotes | `flatpak update -y` | `flatpak uninstall --unused -y` | Deletes app data + removes unused runtimes |
+
+---
+
+### Context-Aware AI Package Intelligence
+Packichu uses your configured AI provider to analyze your software ecosystem in the background:
+- **System Context & Purpose**: Explains what the package is and *why* it is on your machine based on other installed software (e.g., detecting `neovim` to infer why `lua51` or `tree-sitter` exists).
+- **Safety Verdict**: Clear, color-coded removal safety badges:
+  - `[SAFE TO REMOVE]` — Standalone utility, safe to remove if unused.
+  - `[CAUTION]` — Has optional dependents or user configurations.
+  - `[CRITICAL / KEEP]` — System component, kernel driver, or critical dependency.
+- **Highlighted Launch Command Badge**: Automatically parses the primary executable command (e.g., `Command: btop`) for quick reference.
+- **Automated Background Scanner**: Continuously analyzes uncached explicit packages in the background across all managers with interval pacing and status bar progress counters (`[Done/Total]`).
+- **Singleflight Deduplication & Persistent Cache**: Prevents duplicate API requests; cache is permanently keyed by package name in `~/.cache/packichu/analysis.json` and preserved across package upgrades.
+
+---
+
+### Deep Context-Aware Knowledge Search (`/`)
+Press **`/`** in the package list to instantly search installed packages with ranked matching:
+1. **Rank 1**: Exact package name matches
+2. **Rank 2**: Package name prefix matches
+3. **Rank 3**: Package name substring matches
+4. **Rank 4**: Package description matches
+5. **Rank 5 (Deep Semantic Search)**: Searches directly through the **AI analysis text** and explanation knowledge base (e.g. searching *"image editor"*, *"audio plugin"*, or *"wayland clipboard"* will match relevant packages even if the search term does not appear in the package name).
+
+---
+
+### Interactive Fuzzy Search & Install Modal (`i`)
+- Press **`i`** from anywhere to open the package search & installation modal.
+- Multi-token fuzzy matching with repository weighting (`[core]` > `[extra]` > `[multilib]` > `[aur]`).
+- Press **`Tab`** to toggle package descriptions and generate on-the-fly AI quick summaries before installing.
+- Direct non-interactive installation with sudo privilege handling for official repos, AUR helpers, and Flatpak.
+
+---
+
+### Update Center & AI Changelog Previews (`f`, `u`, `U`)
+- **Round-Trip Update Detection**: Checks for available updates across all managers on startup and displays badges/counters (e.g. `[1] Pacman (8)`).
+- **Updates-Only Filter (`f`)**: Press **`f`** to toggle the list view between *All Packages* and *Updates Available Only* for explicitly installed software.
+- **Targeted Package Update (`u`)**: Update highlighted or multi-selected packages with a single confirmation.
+- **AI Changelog Summary (`[a]` inside update modal)**: Before confirming an update, press **`a`** to ask AI for a concise release summary of what's new, performance improvements, bug fixes, and potential breaking changes between your installed version and the target version.
+- **Full System Upgrade (`U`)**: Press **`U`** to run a full upgrade across all detected package managers (Pacman + AUR + Flatpak) with single sudo password caching and scrollable output log streaming.
+
+---
+
+### Provider-Specific Cache Cleaner (`c`)
+- Press **`c`** to open the cache cleaner modal for your active package manager:
+  - **Pacman**: Cleans old package tarballs from `/var/cache/pacman/pkg/` (`pacman -Sc`).
+  - **AUR**: Cleans build cache, cached git clones, and downloaded source archives for `yay` or `paru`.
+  - **Flatpak**: Uninstalls unused runtimes and cleans leftover application cache.
+
+---
+
+### Orphan Package Detection & Batch Removal (`o`)
+- Press **`o`** to inspect unused orphan packages (`pacman -Qtdq`).
+- View orphan package counts and batch-remove all orphans in a single transaction.
+
+---
+
+### Visual Range Selection & Batch Uninstall (`x`, `v`, `Space`)
+- **`Space`**: Toggle selection for individual packages.
+- **`v`**: Enter **Visual Range Selection Mode** — highlight contiguous package blocks using `j`/`k`.
+- **`x`**: Batch-uninstall all selected packages with an in-panel non-destructive password prompt and live status feedback.
+
+---
+
+### Live Theme Cycling (`t`)
+Press **`t`** at any time to instantly cycle through 3 themes:
+1. **Gruvbox Retro** *(Default)* — Warm retro tones with yellow, green, and orange accents.
+2. **Catppuccin Mocha** — Soft pastel palette with mauve, sky, and peach highlights.
+3. **Monokai** — Vibrant high-contrast cyan, pink, and purple styling.
+
+---
+
+## Keybindings
+
+### Navigation & Panels
+| Key | Context | Action |
+|---|---|---|
+| `j` / `k` / `↓` / `↑` | Global / List / Detail | Navigate down / up (auto-displays package detail on hover) |
+| `h` / `l` / `←` / `→` | Panels | Switch panel focus (Sidebar ↔ List ↔ Detail scroll) |
+| `Ctrl+D` / `Ctrl+U` | List / Detail / Modals | Half-page down / up |
+| `G` / `gg` | List / Detail / Modals | Jump to bottom / jump to top |
+| `Tab` | Global | Switch active package manager (Pacman ↔ AUR ↔ Flatpak) |
+| `Enter` / `l` | List | Focus detail panel (scroll view) / commit selection |
+| `Esc` | Global | Clear visual selection / cancel modal / back to list |
+| `q` | Global | Quit Packichu |
+
+### Selection, Sorting & Filtering
+| Key | Context | Action |
+|---|---|---|
+| `Space` | List | Toggle selection for package under cursor |
+| `v` | List | Enter / commit visual range selection mode |
+| `f` | List | **Toggle filter: Show Updatable Packages Only ↔ All Packages** |
+| `/` | List | Live search & deep AI semantic filter |
+| `s` | List | Cycle sort: **Name → Size → Install Date** |
+| `t` | Global | **Cycle Theme: Gruvbox Retro → Catppuccin → Monokai** |
+| `r` | List | Reload package list & re-check updatable packages |
+
+### Actions & Modals
+| Key | Context | Action |
+|---|---|---|
+| `i` | Global | Open package search & installation modal |
+| `u` | List / Detail | Update selected package(s) *(with optional AI Changelog preview `[a]`)* |
+| `U` | Global | **Full System Upgrade** across all package managers (Pacman + AUR + Flatpak) |
+| `c` | Global | **Clean Package Cache** for active package manager (Pacman, AUR, Flatpak) |
+| `o` | Global | Check and batch-clean orphan packages |
+| `x` | List / Detail | Remove highlighted or multi-selected package(s) |
+| `a` | Detail / List | Force AI re-analysis for highlighted package |
+
+---
+
+## Installation
 
 ### Prerequisites
-
 - **Go 1.26+**
-- **Arch Linux** (or Arch-based distribution)
-- **`yay`** or **`paru`** *(optional, recommended)*: For AUR package search and installation.
-- **`flatpak`** *(optional)*: For Flatpak application management.
 
 ### Build from Source
-
 ```bash
 git clone https://github.com/Hendrixx-RE/packichu.git
 cd packichu
-go build -o packichu .
+go build -ldflags="-s -w" -o packichu .
 ```
 
-### Configuration
+To install system-wide:
+```bash
+sudo make install
+```
 
-Packichu loads your configuration from `~/.config/packichu/config.env` (or `~/.config/packichu/.env`, `./.env`, `~/.packichu.env`). No command-line arguments or `.env` in the working directory are required.
+---
 
-#### Supported Providers & Auto-Detection
+## Configuration
 
-Packichu auto-detects whichever provider key is present:
+Packichu searches and loads configuration in standard priority order:
+1. `~/.config/packichu/config.env` (or `~/.config/packichu/.env`, `~/.config/packichu/config`)
+2. `~/.packichu.env`
+3. `./.env` (Current working directory)
 
-| Provider | Environment Variable | Default Model | Free Tier Available? |
+### Supported Providers & Automatic Detection
+
+Packichu automatically binds the provider and model based on whichever API key is present:
+
+| Provider | Config Key | Default Model | Free Tier? |
 |---|---|---|:---:|
 | **Google Gemini** *(Recommended)* | `GEMINI_API_KEY` | `gemini-2.5-flash` | Yes ([Google AI Studio](https://aistudio.google.com)) |
 | **Groq** | `GROQ_API_KEY` | `openai/gpt-oss-120b` | Yes ([Groq Console](https://console.groq.com)) |
 | **OpenAI** | `OPENAI_API_KEY` | `gpt-4o-mini` | Paid API credits |
 | **Anthropic** | `ANTHROPIC_API_KEY` | `claude-3-5-haiku-latest` | Paid API credits |
 
-#### Setup
-
-```bash
-mkdir -p ~/.config/packichu
-```
-
-Create `~/.config/packichu/config.env`:
+### Example `~/.config/packichu/config.env`:
 
 ```env
-# Option 1: Google Gemini (Recommended - Free tier)
+# Packichu auto-detects whichever key you provide!
+
+# Option 1: Google Gemini (Recommended - Free tier at https://aistudio.google.com)
 GEMINI_API_KEY=AIzaSy...your_key_here
 
-# Option 2: Groq (Free tier)
+# Option 2: Groq (Free tier at https://console.groq.com)
 # GROQ_API_KEY=gsk_...your_key_here
 
 # Option 3: OpenAI
@@ -165,58 +207,65 @@ GEMINI_API_KEY=AIzaSy...your_key_here
 # Option 4: Anthropic
 # ANTHROPIC_API_KEY=sk-ant-...your_key_here
 
-# Optional: Override the model
+# Optional: Override the default model
 # PACKICHU_MODEL=gemini-2.5-flash
 
 # Optional: Force a specific provider if multiple keys exist (gemini, groq, openai, anthropic)
 # PACKICHU_PROVIDER=gemini
 
-# Optional: Custom delay between background requests (default: 4s for Gemini, 2.5s for others)
-# PACKICHU_RATE_LIMIT_DELAY=3s
+# Optional: Custom pacing delay between background requests (default: 4s for Gemini, 2.5s for others)
+# PACKICHU_RATE_LIMIT_DELAY=4s
 ```
 
 ---
 
-##  Architecture
+## Architecture
 
 ```
 packichu/
-├── main.go                  # Entry point — loads XDG config, initializes Bubble Tea program
-├── go.mod / go.sum          # Module dependencies
+├── main.go                  # Entry point — loads XDG config, starts Bubble Tea program
+├── go.mod / go.sum          # Module definition & dependency locks
+├── .env.example             # Template configuration file
+├── Makefile                 # Build, test, clean, install targets
+├── aur/
+│   └── PKGBUILD             # Arch User Repository build script
+├── GEMINI.md                # Agent reference and architecture guide
+├── README.md                # User documentation
 │
 └── internal/
     ├── ai/
     │   ├── analyzer.go      # Multi-provider client (Gemini, Groq, OpenAI, Anthropic), singleflight, pacing
-    │   └── analyzer_test.go # Deduplication, delay floor, and provider detection tests
+    │   └── analyzer_test.go # Deduplication, delay floor, changelog & provider detection tests
     │
     ├── cache/
     │   ├── cache.go         # Thread-safe JSON cache by package name (sync.RWMutex, auto-migration)
     │   └── cache_test.go    # Cache lookup and version upgrade retention tests
     │
     ├── pm/                  # Package Manager Abstraction Layer
-    │   ├── package.go       # Package struct & Manager interface
-    │   ├── detect.go        # Dynamic package manager detector
-    │   ├── pacman.go        # Pacman official provider (-Qi parser, search, orphans, install, update)
-    │   ├── aur.go           # AUR foreign provider (yay/paru helper integration)
-    │   ├── flatpak.go       # Flatpak provider (list, search, install, update, cleanup)
-    │   ├── fuzzy.go         # Fuzzy matching & repository relevance ranking engine
+    │   ├── package.go       # Package struct & Manager interface (CleanCacheCmd, InstallCmd, etc.)
+    │   ├── detect.go        # Dynamic host package manager detection (Pacman, AUR, Flatpak)
+    │   ├── pacman.go        # Pacman implementation (native packages, checkupdates, cache clean, search)
+    │   ├── aur.go           # AUR foreign implementation (yay/paru integration, cache clean)
+    │   ├── flatpak.go       # Flatpak implementation (list, search, install, update, unused cleanup)
+    │   ├── fuzzy.go         # Multi-token fuzzy matching & repository relevance ranking
     │   └── fuzzy_test.go    # Fuzzy scoring test suite
     │
     └── tui/                 # Terminal UI (Bubble Tea + Lip Gloss)
-        ├── model.go         # State machine, model definitions, async commands
-        ├── msgs.go          # Message types
-        ├── update.go        # Key handlers, cross-manager sync worker, modals, execution loops
-        ├── view.go          # Layout rendering (sidebar, list, detail, highlighted command badge, modals)
+        ├── model.go         # State machine, model definitions, async commands, filter/search engine
+        ├── msgs.go          # Bubble Tea message types
+        ├── update.go        # Key handlers, cross-manager sync worker, modals, full upgrade loop
+        ├── view.go          # Responsive layouts (sidebar, list, detail, highlighted command badge, modals)
         ├── styles.go        # Multi-theme design system (Gruvbox Retro, Catppuccin, Monokai)
         ├── theme_test.go    # Theme cycling tests
-        └── verdict_test.go  # Verdict and command parsing tests
+        ├── verdict_test.go  # Verdict and command parsing tests
+        └── updatable_test.go# Updates filter, AI preview & cache clean modal tests
 ```
 
 ---
 
-##  Contributing
+## Contributing
 
-Contributions are welcome! Adding a new package manager is simple — implement the `pm.Manager` interface in `internal/pm/`:
+Contributions are welcome! Adding a new package manager is straightforward — implement the `pm.Manager` interface in `internal/pm/`:
 
 ```go
 type Manager interface {
@@ -229,6 +278,8 @@ type Manager interface {
     InstallCmd(name string) []string
     UpdateCmd() []string
     UpdatePackagesCmd(names []string) []string
+    GetUpdatable() ([]UpdatablePackage, error)
+    CleanCacheCmd() []string
     Search(query string) ([]Package, error)
     RequiresSudo() bool
 }
@@ -236,7 +287,7 @@ type Manager interface {
 
 ---
 
-##  License
+## License
 
 MIT License. See [LICENSE](LICENSE) for details.
 
@@ -244,7 +295,7 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 <div align="center">
 
-**Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea)  and [Lip Gloss](https://github.com/charmbracelet/lipgloss) **
+**Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lip Gloss](https://github.com/charmbracelet/lipgloss)**
 
 *Packichu — Package management made clean, fast, and intelligent.*
 

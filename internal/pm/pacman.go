@@ -45,6 +45,10 @@ func (p *Pacman) UpdatePackagesCmd(names []string) []string {
 	return append([]string{"pacman", "-S", "--noconfirm"}, names...)
 }
 
+func (p *Pacman) CleanCacheCmd() []string {
+	return []string{"pacman", "-Sc", "--noconfirm"}
+}
+
 func parseCheckupdatesLine(line string, mgrName string) (UpdatablePackage, bool) {
 	line = strings.TrimSpace(line)
 	if line == "" {
@@ -69,6 +73,26 @@ func parseCheckupdatesLine(line string, mgrName string) (UpdatablePackage, bool)
 	return UpdatablePackage{}, false
 }
 
+func getExplicitPackageNames(foreignOnly bool) map[string]bool {
+	args := []string{"-Qeq"}
+	if foreignOnly {
+		args = []string{"-Qemq"}
+	}
+	out, err := exec.Command("pacman", args...).Output()
+	if err != nil {
+		return nil
+	}
+	m := make(map[string]bool)
+	scanner := bufio.NewScanner(bytes.NewReader(out))
+	for scanner.Scan() {
+		name := strings.TrimSpace(scanner.Text())
+		if name != "" {
+			m[name] = true
+		}
+	}
+	return m
+}
+
 func (p *Pacman) GetUpdatable() ([]UpdatablePackage, error) {
 	var out []byte
 	var err error
@@ -85,11 +109,15 @@ func (p *Pacman) GetUpdatable() ([]UpdatablePackage, error) {
 		out, _ = cmd.Output()
 	}
 
+	explicitNames := getExplicitPackageNames(false)
+
 	var results []UpdatablePackage
 	scanner := bufio.NewScanner(bytes.NewReader(out))
 	for scanner.Scan() {
 		if u, ok := parseCheckupdatesLine(scanner.Text(), "pacman"); ok {
-			results = append(results, u)
+			if explicitNames == nil || explicitNames[u.Name] {
+				results = append(results, u)
+			}
 		}
 	}
 	return results, nil

@@ -115,3 +115,43 @@ func TestProviderAutoDetection(t *testing.T) {
 		t.Errorf("expected default Groq model %s, got %s", defaultGroqModel, a.model)
 	}
 }
+
+func TestAnalyzerChangelog(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{
+			"choices": [{
+				"message": {
+					"content": "Curl 8.1.0 adds support for HTTP/3 improved connection reuse and several security fixes."
+				}
+			}]
+		}`))
+	}))
+	defer server.Close()
+
+	analyzer := &Analyzer{
+		provider: Groq,
+		model:    "openai/gpt-oss-120b",
+		endpoint: server.URL,
+		apiKey:   "test-key",
+		client:   server.Client(),
+	}
+
+	updates := []pm.UpdatablePackage{
+		{
+			Name:       "curl",
+			OldVersion: "8.0.0",
+			NewVersion: "8.1.0",
+			Manager:    "pacman",
+		},
+	}
+
+	res, err := analyzer.AnalyzeUpdateChangelog(context.Background(), updates)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == "" {
+		t.Fatalf("expected non-empty changelog summary")
+	}
+}

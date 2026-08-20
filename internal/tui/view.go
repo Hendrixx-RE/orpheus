@@ -64,6 +64,10 @@ func (m Model) View() string {
 		return m.renderUpdateModal()
 	}
 
+	if m.cleanCacheModal {
+		return m.renderCleanCacheModal()
+	}
+
 	return mainView
 }
 
@@ -89,12 +93,31 @@ func (m Model) renderTopTabBar() string {
 
 	for i, mgr := range m.managers {
 		label := mgrDisplayName(mgr.Name())
-		tabText := fmt.Sprintf("[%d] %s", i+1, label)
-		if m.activeMgr == i {
-			sb.WriteString(styleSidebarActive.Render(tabText) + "  ")
+		upCount := len(m.updatables[mgr.Name()])
+		var tabText string
+		if upCount > 0 {
+			tabText = fmt.Sprintf("[%d] %s (%d)", i+1, label, upCount)
 		} else {
-			sb.WriteString(styleDimmed.Render(tabText) + "  ")
+			tabText = fmt.Sprintf("[%d] %s", i+1, label)
 		}
+
+		if m.activeMgr == i {
+			if upCount > 0 {
+				sb.WriteString(styleSidebarActive.Foreground(colorYellow).Render(tabText) + "  ")
+			} else {
+				sb.WriteString(styleSidebarActive.Render(tabText) + "  ")
+			}
+		} else {
+			if upCount > 0 {
+				sb.WriteString(styleAILabel.Render(tabText) + "  ")
+			} else {
+				sb.WriteString(styleDimmed.Render(tabText) + "  ")
+			}
+		}
+	}
+
+	if m.showUpdatableOnly {
+		sb.WriteString(lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("[UPDATES ONLY]") + "  ")
 	}
 
 	if m.isCompact() {
@@ -141,7 +164,7 @@ func (m Model) renderUpdateModal() string {
 	for _, mgr := range m.managers {
 		allMgrNames = append(allMgrNames, mgrDisplayName(mgr.Name()))
 	}
-	// allMgrsStr := strings.Join(allMgrNames, " + ")
+	allMgrsStr := strings.Join(allMgrNames, " + ")
 
 	var sb strings.Builder
 	title := "Update Packages"
@@ -160,9 +183,10 @@ func (m Model) renderUpdateModal() string {
 			return
 		}
 		sb.WriteString(styleKey.Render(fmt.Sprintf("Packages to be updated (%d items):", len(m.updateTargets))) + "\n")
-		maxShow := minI(len(m.updateTargets), 6)
+		maxShow := minI(len(m.updateTargets), 4)
 		for i := 0; i < maxShow; i++ {
-			sb.WriteString("  " + dot + " " + styleVal.Render(m.updateTargets[i]) + "\n")
+			name := m.updateTargets[i]
+			sb.WriteString("  " + dot + " " + styleVal.Render(name) + "\n")
 		}
 		if len(m.updateTargets) > maxShow {
 			sb.WriteString(styleDimmed.Render(fmt.Sprintf("  ... and %d more", len(m.updateTargets)-maxShow)) + "\n")
@@ -176,8 +200,8 @@ func (m Model) renderUpdateModal() string {
 		if len(m.updateTargets) > 0 {
 			renderTargetList()
 		} else {
-			sb.WriteString(styleVal.Render("Ready to perform a full system upgrade across all package managers:\n"))
-			// styleAILabel.Render("  "+allMgrsStr) + "\n\n")
+			sb.WriteString(styleVal.Render("Ready to perform a full system upgrade across all package managers:\n") +
+				styleAILabel.Render("  "+allMgrsStr) + "\n\n")
 		}
 		sb.WriteString(styleAILabel.Render("sudo password") + "\n")
 		sb.WriteString(m.updatePasswordInput.View() + "\n\n")
@@ -215,13 +239,116 @@ func (m Model) renderUpdateModal() string {
 		}
 		sb.WriteString(styleDimmed.Render("j/k scroll log  |  Enter/Esc to close and reload"))
 
+	// Phase: AI changelog loading
+	case m.updateAILoading:
+		sb.WriteString(m.spinner.View() + " " + styleAILabel.Render("Asking AI: Analyzing changelog & latest changes...") + "\n\n")
+		sb.WriteString(styleDimmed.Render("Connecting to AI service to summarize version changes..."))
+
+	// Phase: AI changelog preview rendered
+	case m.updateShowAIPreview:
+		if len(m.updateTargets) > 0 {
+			maxShow := minI(len(m.updateTargets), 3)
+			names := m.updateTargets[:maxShow]
+			summary := strings.Join(names, ", ")
+			if len(m.updateTargets) > maxShow {
+				summary += fmt.Sprintf(" (+%d more)", len(m.updateTargets)-maxShow)
+			}
+			sb.WriteString(styleKey.Render("Packages: ") + styleVal.Render(summary) + "\n\n")
+		}
+		sb.WriteString(styleAILabel.Render("AI Update Changelog & Release Notes:") + "\n")
+		sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n")
+		if m.updateAIErr != "" {
+			sb.WriteString(styleOrphan.Render(wrapText(m.updateAIErr, innerW)) + "\n")
+		} else {
+			sb.WriteString(m.updateAIVP.View() + "\n")
+		}
+		sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n\n")
+		sb.WriteString(styleKey.Render("Enter") + styleDimmed.Render(" proceed to update  |  ") +
+			styleKey.Render("j/k") + styleDimmed.Render(" scroll  |  ") +
+			styleKey.Render("Esc") + styleDimmed.Render(" back"))
+
+	// Phase: Initial confirmation & "Ask AI what's changed" prompt
 	default:
 		if len(m.updateTargets) > 0 {
 			renderTargetList()
 		} else {
-			sb.WriteString(styleDimmed.Render("Ready to update.") + "\n\n")
+			sb.WriteString(styleVal.Render("Ready to perform a full system upgrade across all package managers:\n") +
+				styleAILabel.Render("  "+allMgrsStr) + "\n\n")
 		}
-		sb.WriteString(styleDimmed.Render("Enter to confirm  |  Esc to close"))
+
+		sb.WriteString(styleKey.Render("  [a] ") + styleAILabel.Render("Ask AI: What's new & changed in this update?") + "\n")
+		sb.WriteString(styleKey.Render("  [Enter] ") + styleVal.Render("Proceed with update") + "\n")
+		sb.WriteString(styleKey.Render("  [Esc] ") + styleDimmed.Render("Cancel") + "\n")
+	}
+
+	modalBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorCyan).
+		Padding(1, 3).
+		Width(modalW).
+		Render(sb.String())
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modalBox)
+}
+
+func (m Model) renderCleanCacheModal() string {
+	mgrTitle := mgrDisplayName(m.managers[m.activeMgr].Name())
+	modalW := minI(70, maxI(36, m.width-4))
+	innerW := modalW - 8 - 2
+
+	var sb strings.Builder
+	title := fmt.Sprintf("Clean Package Cache — %s", mgrTitle)
+	sb.WriteString(styleTitle.Render(title) + "\n")
+	sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n\n")
+
+	switch {
+	case m.cleanCacheAskPassword:
+		sb.WriteString(styleVal.Render("Authentication required to clear package cache:\n\n"))
+		sb.WriteString(styleAILabel.Render("sudo password") + "\n")
+		sb.WriteString(m.cleanCachePasswordInput.View() + "\n\n")
+		sb.WriteString(styleDimmed.Render("Enter to confirm  |  Esc to cancel"))
+
+	case m.cleanCacheLoading:
+		sb.WriteString(m.spinner.View() + " " + styleDimmed.Render(fmt.Sprintf("Cleaning package cache for %s...", mgrTitle)) + "\n\n")
+		sb.WriteString(styleDimmed.Render("Please wait, removing cached tarballs and unused files..."))
+
+	case m.cleanCacheErr != "":
+		sb.WriteString(styleOrphan.Render("Cache cleanup failed:") + "\n")
+		if m.cleanCacheOutput != "" {
+			sb.WriteString(styleVal.Render(truncate(m.cleanCacheErr, innerW)) + "\n\n")
+			sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n")
+			sb.WriteString(m.cleanCacheOutputVP.View() + "\n")
+			sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n\n")
+		} else {
+			sb.WriteString(styleOrphan.Render(wrapText(m.cleanCacheErr, innerW)) + "\n\n")
+		}
+		sb.WriteString(styleDimmed.Render("j/k scroll log  |  Enter/Esc to close"))
+
+	case m.cleanCacheDone:
+		sb.WriteString(styleVerdict.Render("✓ Cache cleaned successfully!") + "\n\n")
+		if m.cleanCacheOutput != "" {
+			sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n")
+			sb.WriteString(m.cleanCacheOutputVP.View() + "\n")
+			sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n\n")
+		}
+		sb.WriteString(styleDimmed.Render("j/k scroll log  |  Enter/Esc to close"))
+
+	default:
+		var desc string
+		switch m.managers[m.activeMgr].Name() {
+		case "pacman":
+			desc = "This will remove uninstalled and outdated package tarballs from /var/cache/pacman/pkg/ to free disk space."
+		case "aur":
+			desc = "This will clean downloaded AUR build tarballs and cached repository build files."
+		case "flatpak":
+			desc = "This will clean unused Flatpak runtimes and cache files."
+		default:
+			desc = fmt.Sprintf("This will clean the package cache for %s.", mgrTitle)
+		}
+
+		sb.WriteString(styleVal.Render(wrapText(desc, innerW)) + "\n\n")
+		sb.WriteString(styleKey.Render("  [Enter] ") + styleVal.Render("Proceed with cache cleanup") + "\n")
+		sb.WriteString(styleKey.Render("  [Esc] ") + styleDimmed.Render("Cancel") + "\n")
 	}
 
 	modalBox := lipgloss.NewStyle().
@@ -482,18 +609,34 @@ func (m Model) renderSidebar() string {
 
 	var sb strings.Builder
 	sb.WriteString(styleTitle.Render("  Packichu") + "\n\n")
-	sb.WriteString(styleTitle.Render("  Packages") + "\n")
+	sb.WriteString(styleTitle.Render("  Managers") + "\n")
 
 	for i, mgr := range m.managers {
 		var line string
 		label := mgrDisplayName(mgr.Name())
+		upCount := len(m.updatables[mgr.Name()])
+		if upCount > 0 {
+			label = fmt.Sprintf("%s (%d)", label, upCount)
+		}
 
 		if m.activeMgr == i {
-			line = styleSidebarActive.Render(">   " + label)
+			if upCount > 0 {
+				line = lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render(">   " + label)
+			} else {
+				line = styleSidebarActive.Render(">   " + label)
+			}
 		} else {
-			line = styleDimmed.Render("    " + label)
+			if upCount > 0 {
+				line = styleAILabel.Render("    " + label)
+			} else {
+				line = styleDimmed.Render("    " + label)
+			}
 		}
 		sb.WriteString(line + "\n")
+	}
+
+	if m.showUpdatableOnly {
+		sb.WriteString("\n" + styleOrphan.Render("  ● Filter: Updates") + "\n")
 	}
 
 	// fill remaining height
@@ -540,9 +683,15 @@ func (m Model) renderPackageList(w, h int) string {
 		sortLabel = "Date"
 	}
 	title := "Packages (" + count + ")  " + styleDimmed.Render("by "+sortLabel)
+	if m.showUpdatableOnly {
+		title = "Updates Available (" + count + ")  " + styleDimmed.Render("by "+sortLabel)
+	}
 
 	if m.searching || m.searchInput.Value() != "" {
 		title = "Packages  " + styleAILabel.Render("/"+m.searchInput.Value()) + "  " + styleDimmed.Render("by "+sortLabel)
+		if m.showUpdatableOnly {
+			title = "Updates  " + styleAILabel.Render("/"+m.searchInput.Value()) + "  " + styleDimmed.Render("by "+sortLabel)
+		}
 	}
 
 	sb.WriteString(styleTitle.Render(title) + "\n")
@@ -555,7 +704,11 @@ func (m Model) renderPackageList(w, h int) string {
 
 	pkgs := m.filteredPkgs
 	if len(pkgs) == 0 {
-		sb.WriteString("\n  " + styleDimmed.Render("No packages found") + "\n")
+		if m.showUpdatableOnly {
+			sb.WriteString("\n  " + styleDimmed.Render("No updatable packages for "+mgrDisplayName(m.managers[m.activeMgr].Name())) + "\n")
+		} else {
+			sb.WriteString("\n  " + styleDimmed.Render("No packages found") + "\n")
+		}
 		return sb.String()
 	}
 
@@ -567,7 +720,7 @@ func (m Model) renderPackageList(w, h int) string {
 		p := pkgs[i]
 		checked := m.isPkgSelected(i)
 		hovered := i == m.listCursor
-		line := renderPkgLine(p, w-4, checked, hovered)
+		line := m.renderPkgLine(p, w-4, checked, hovered)
 		sb.WriteString(line + "\n")
 	}
 
@@ -580,26 +733,36 @@ func (m Model) renderPackageList(w, h int) string {
 	return sb.String()
 }
 
-func renderPkgLine(p pm.Package, width int, checked bool, hovered bool) string {
+func (m Model) renderPkgLine(p pm.Package, width int, checked bool, hovered bool) string {
 	size := fmt.Sprintf("%-10s", p.FormatSize())
 	nameWidth := maxI(8, width-16)
 	name := truncate(p.Name, nameWidth)
 
+	var upInfo *pm.UpdatablePackage
+	if u, ok := m.updatableMap[p.Name]; ok {
+		upInfo = &u
+	}
+
 	var badge string
 	if checked {
 		badge = lipgloss.NewStyle().Foreground(colorPurple).Bold(true).Render("✓")
+	} else if upInfo != nil {
+		badge = lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("▲")
 	} else {
 		badge = styleExplicit.Render("●")
 	}
 
-	line := badge + " " + padRight(name, nameWidth) + " " + styleDimmed.Render(size)
+	rightInfo := styleDimmed.Render(size)
+	line := badge + " " + padRight(name, nameWidth) + " " + rightInfo
 
 	if hovered {
 		hoverBadge := lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("●")
 		if checked {
 			hoverBadge = lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("✓")
+		} else if upInfo != nil {
+			hoverBadge = lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("▲")
 		}
-		row := hoverBadge + " " + styleSelected.Background(lipgloss.NoColor{}).Foreground(colorYellow).Render(padRight(name, nameWidth)) + " " + styleDimmed.Render(size)
+		row := hoverBadge + " " + styleSelected.Background(lipgloss.NoColor{}).Foreground(colorYellow).Render(padRight(name, nameWidth)) + " " + rightInfo
 		return "  " + row
 	}
 
@@ -673,6 +836,11 @@ func (m Model) renderDetailEmpty() string {
 
 func (m Model) renderStatusBar() string {
 	var hints []string
+	filterHint := "updates only"
+	if m.showUpdatableOnly {
+		filterHint = "show all"
+	}
+
 	if m.searching {
 		hints = []string{
 			styleKey.Render("Enter") + " confirm",
@@ -680,11 +848,10 @@ func (m Model) renderStatusBar() string {
 		}
 	} else if m.focusedPanel == panelSidebar {
 		hints = []string{
-			styleKey.Render("j/k") + " move",
-			styleKey.Render("l/Enter") + " list",
 			styleKey.Render("t") + " theme",
 			styleKey.Render("U") + " upgrade all",
 			styleKey.Render("i") + " install",
+			styleKey.Render("c") + " clean cache",
 			styleKey.Render("o") + " orphans",
 			styleKey.Render("q") + " quit",
 		}
@@ -695,35 +862,34 @@ func (m Model) renderStatusBar() string {
 			styleKey.Render("U") + " upgrade all",
 			styleKey.Render("t") + " theme",
 			styleKey.Render("i") + " install",
+			styleKey.Render("c") + " clean cache",
 			styleKey.Render("o") + " orphans",
-			styleKey.Render("j/k") + " scroll",
-			styleKey.Render("h/Esc") + " back",
 			styleKey.Render("q") + " quit",
 		}
 	} else if m.isCompact() {
 		hints = []string{
-			styleKey.Render("Enter") + " detail",
 			styleKey.Render("v/Spc") + " select",
-			styleKey.Render("j/k") + " move",
 			styleKey.Render("t") + " theme",
 			styleKey.Render("u") + " update",
 			styleKey.Render("U") + " upgrade all",
 			styleKey.Render("s") + " sort",
+			styleKey.Render("f") + " " + filterHint,
 			styleKey.Render("i") + " install",
+			styleKey.Render("c") + " clean cache",
 			styleKey.Render("o") + " orphans",
 			styleKey.Render("/") + " search",
 			styleKey.Render("q") + " quit",
 		}
 	} else {
 		hints = []string{
-			styleKey.Render("j/k") + " move",
-			styleKey.Render("l") + " scroll detail",
 			styleKey.Render("v/Spc") + " select",
 			styleKey.Render("t") + " theme",
 			styleKey.Render("u") + " update",
 			styleKey.Render("U") + " upgrade all",
 			styleKey.Render("s") + " sort",
+			styleKey.Render("f") + " " + filterHint,
 			styleKey.Render("i") + " install",
+			styleKey.Render("c") + " clean cache",
 			styleKey.Render("o") + " orphans",
 			styleKey.Render("/") + " search",
 			styleKey.Render("q") + " quit",
@@ -755,8 +921,7 @@ func (m Model) renderStatusBar() string {
 		left = left + "  " + syncIndicator
 	}
 
-	bar := styleStatusBar.Render(left)
-	return "  " + bar
+	return "  " + styleStatusBar.Render(left)
 }
 
 func truncate(s string, n int) string {
