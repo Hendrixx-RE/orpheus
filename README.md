@@ -157,17 +157,34 @@ Press **`t`** at any time to instantly cycle through 3 themes:
 
 ### Prerequisites
 - **Go 1.26+**
+- **Arch Linux** (or Arch-based distribution)
+- **`yay`** or **`paru`** *(optional, recommended)*: For AUR package search, installation, and upgrades.
+- **`flatpak`** *(optional)*: For Flatpak application management.
 
-### Build from Source
+### Option 1: Native Arch Package via makepkg (Recommended)
+
+Clone the repository and install it directly using the included `PKGBUILD`:
+
 ```bash
 git clone https://github.com/Hendrixx-RE/packichu.git
 cd packichu
-go build -ldflags="-s -w" -o packichu .
+makepkg -si
 ```
 
-To install system-wide:
+This compiles the standalone binary, installs the desktop launcher for Rofi/app menus to `/usr/share/applications/packichu.desktop`, and registers the package in your system's `pacman` database (allowing easy tracking and clean removal via `sudo pacman -R packichu`).
+
+### Option 2: Build & Install via Makefile
+
 ```bash
+git clone https://github.com/Hendrixx-RE/packichu.git
+cd packichu
+make
 sudo make install
+```
+
+To uninstall later:
+```bash
+sudo make uninstall
 ```
 
 ---
