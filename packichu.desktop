@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Packichu
+GenericName=Package Manager Dashboard
+Comment=Terminal-based package management & AI system inspection dashboard for Arch Linux
+Exec=packichu
+Icon=system-software-install
+Terminal=true
+Categories=System;PackageManager;Settings;Utility;
+Keywords=pacman;aur;flatpak;package;manager;update;install;ai;system;
+StartupNotify=false

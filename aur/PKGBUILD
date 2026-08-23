@@ -32,12 +32,13 @@ build() {
 
 check() {
     cd "$srcdir/packichu"
-    go test ./...
+    go test ./internal/...
 }
 
 package() {
     cd "$srcdir/packichu"
     install -Dm755 packichu "$pkgdir/usr/bin/packichu"
+    install -Dm644 packichu.desktop "$pkgdir/usr/share/applications/packichu.desktop"
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 }
