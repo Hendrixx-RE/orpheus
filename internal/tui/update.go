@@ -859,7 +859,12 @@ func (m Model) buildDetailContent() string {
 		write("Size", styleVal.Render(p.FormatSize()))
 	}
 	if !p.InstallDate.IsZero() {
-		write("Installed", styleVal.Render(p.InstallDate.Format("Jan 02, 2006")))
+		write("Installed", styleVal.Render(p.InstallDate.Format("Jan 02, 2006 15:04")))
+	} else {
+		write("Installed", styleDimmed.Render("Unknown"))
+	}
+	if !p.BuildDate.IsZero() {
+		write("Built", styleDimmed.Render(p.BuildDate.Format("Jan 02, 2006")))
 	}
 	write("Reason", styleExplicit.Render("Explicit"))
 	if p.Architecture != "" {

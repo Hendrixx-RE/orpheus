@@ -364,6 +364,9 @@ func (m *Model) applyFilter() {
 			})
 		case sortByDate:
 			sort.Slice(out, func(i, j int) bool {
+				if out[i].InstallDate.Equal(out[j].InstallDate) {
+					return out[i].Name < out[j].Name
+				}
 				return out[i].InstallDate.After(out[j].InstallDate)
 			})
 		case sortByName:
@@ -421,6 +424,9 @@ func (m *Model) applyFilter() {
 		case sortBySize:
 			return matches[i].pkg.Size > matches[j].pkg.Size
 		case sortByDate:
+			if matches[i].pkg.InstallDate.Equal(matches[j].pkg.InstallDate) {
+				return matches[i].pkg.Name < matches[j].pkg.Name
+			}
 			return matches[i].pkg.InstallDate.After(matches[j].pkg.InstallDate)
 		default:
 			return matches[i].pkg.Name < matches[j].pkg.Name

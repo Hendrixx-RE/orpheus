@@ -2,6 +2,7 @@ package tui
 
 import (
 	"testing"
+	"time"
 
 	"packichu/internal/pm"
 
@@ -110,5 +111,31 @@ func TestCleanCacheModalFlow(t *testing.T) {
 	}
 	if m.cleanCacheOutput != "Package cache cleaned." {
 		t.Errorf("expected clean cache output, got %q", m.cleanCacheOutput)
+	}
+}
+
+func TestSortByDate(t *testing.T) {
+	m := New()
+	now := time.Now()
+	m.allPkgs = []pm.Package{
+		{Name: "pkg-old", Version: "1.0", InstallDate: now.Add(-10 * time.Hour), InstallReason: "Explicitly installed"},
+		{Name: "pkg-new", Version: "2.0", InstallDate: now, InstallReason: "Explicitly installed"},
+		{Name: "pkg-mid", Version: "1.5", InstallDate: now.Add(-5 * time.Hour), InstallReason: "Explicitly installed"},
+	}
+
+	m.sortMode = sortByDate
+	m.applyFilter()
+
+	if len(m.filteredPkgs) != 3 {
+		t.Fatalf("expected 3 packages, got %d", len(m.filteredPkgs))
+	}
+	if m.filteredPkgs[0].Name != "pkg-new" {
+		t.Errorf("expected newest package first, got %s", m.filteredPkgs[0].Name)
+	}
+	if m.filteredPkgs[1].Name != "pkg-mid" {
+		t.Errorf("expected mid package second, got %s", m.filteredPkgs[1].Name)
+	}
+	if m.filteredPkgs[2].Name != "pkg-old" {
+		t.Errorf("expected oldest package third, got %s", m.filteredPkgs[2].Name)
 	}
 }

@@ -1,8 +1,11 @@
 package pm
 
 import (
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Flatpak struct{}
@@ -155,11 +158,41 @@ func (p *Flatpak) GetOrphans() ([]string, error) {
 	return orphans, nil
 }
 
+func getFlatpakInstallDate(appID, installation string) time.Time {
+	if installation == "user" {
+		if home, err := os.UserHomeDir(); err == nil {
+			p := filepath.Join(home, ".local/share/flatpak/app", appID)
+			if fi, err := os.Stat(p); err == nil {
+				return fi.ModTime()
+			}
+		}
+	} else if installation == "system" {
+		p := filepath.Join("/var/lib/flatpak/app", appID)
+		if fi, err := os.Stat(p); err == nil {
+			return fi.ModTime()
+		}
+	}
+
+	// Fallback: check user then system
+	if home, err := os.UserHomeDir(); err == nil {
+		p := filepath.Join(home, ".local/share/flatpak/app", appID)
+		if fi, err := os.Stat(p); err == nil {
+			return fi.ModTime()
+		}
+	}
+	p := filepath.Join("/var/lib/flatpak/app", appID)
+	if fi, err := os.Stat(p); err == nil {
+		return fi.ModTime()
+	}
+
+	return time.Time{}
+}
+
 func (p *Flatpak) ListAll() ([]Package, error) {
 	// flatpak list outputs tab-separated columns when piped.
-	// Columns: application, name, version, size, description, arch
+	// Columns: application, name, version, size, description, arch, installation
 	// :f prevents ellipsization
-	out, err := runCmd("flatpak", "list", "--app", "--columns=application:f,name:f,version:f,size:f,description:f,arch:f")
+	out, err := runCmd("flatpak", "list", "--app", "--columns=application:f,name:f,version:f,size:f,description:f,arch:f,installation:f")
 	if err != nil {
 		return nil, err
 	}
@@ -184,6 +217,10 @@ func (p *Flatpak) ListAll() ([]Package, error) {
 		sizeStr := strings.TrimSpace(parts[3])
 		desc := strings.TrimSpace(parts[4])
 		arch := strings.TrimSpace(parts[5])
+		installation := ""
+		if len(parts) >= 7 {
+			installation = strings.TrimSpace(parts[6])
+		}
 
 		// For Packichu UI, the main identifier is Name. Let's use the appID as Name
 		// because that's what flatpak uninstall requires. We could use Name for the real name,
@@ -194,6 +231,7 @@ func (p *Flatpak) ListAll() ([]Package, error) {
 			Description:   name + " - " + desc, // Prepend real name to description
 			Architecture:  arch,
 			Size:          parseFlatpakSize(sizeStr),
+			InstallDate:   getFlatpakInstallDate(appID, installation),
 			InstallReason: "Explicitly installed", // Assume apps are explicitly installed
 		}
 		pkgs = append(pkgs, pkg)

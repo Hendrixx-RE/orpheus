@@ -40,3 +40,33 @@ func TestAURManagerCreation(t *testing.T) {
 		t.Errorf("unexpected install command: %v", installCmd)
 	}
 }
+
+func TestFlatpakManager(t *testing.T) {
+	f := NewFlatpak()
+	if f.Name() != "flatpak" {
+		t.Errorf("expected Flatpak name 'flatpak', got '%s'", f.Name())
+	}
+	if f.RequiresSudo() {
+		t.Errorf("expected Flatpak to not require sudo")
+	}
+
+	size := parseFlatpakSize("15.5 MB")
+	if size <= 0 {
+		t.Errorf("expected parsed size > 0, got %d", size)
+	}
+}
+
+func TestParseDate(t *testing.T) {
+	testDates := []string{
+		"Fri 08 May 2026 04:56:09 PM IST",
+		"Sun 16 Aug 2026 02:47:20 AM IST",
+		"Mon 02 Jan 2006 15:04:05 MST",
+		"2026-08-24 10:30:00",
+	}
+	for _, d := range testDates {
+		parsed := parseDate(d)
+		if parsed.IsZero() {
+			t.Errorf("failed to parse valid date: %q", d)
+		}
+	}
+}

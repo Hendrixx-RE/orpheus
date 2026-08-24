@@ -732,7 +732,19 @@ func (m Model) renderPackageList(w, h int) string {
 }
 
 func (m Model) renderPkgLine(p pm.Package, width int, checked bool, hovered bool) string {
-	size := fmt.Sprintf("%-10s", p.FormatSize())
+	var infoStr string
+	switch m.sortMode {
+	case sortByDate:
+		if !p.InstallDate.IsZero() {
+			infoStr = p.InstallDate.Format("2006-01-02")
+		} else {
+			infoStr = "Unknown"
+		}
+	default:
+		infoStr = p.FormatSize()
+	}
+
+	rightFormatted := fmt.Sprintf("%-10s", infoStr)
 	nameWidth := maxI(8, width-16)
 	name := truncate(p.Name, nameWidth)
 
@@ -750,7 +762,7 @@ func (m Model) renderPkgLine(p pm.Package, width int, checked bool, hovered bool
 		badge = styleExplicit.Render("●")
 	}
 
-	rightInfo := styleDimmed.Render(size)
+	rightInfo := styleDimmed.Render(rightFormatted)
 	line := badge + " " + padRight(name, nameWidth) + " " + rightInfo
 
 	if hovered {

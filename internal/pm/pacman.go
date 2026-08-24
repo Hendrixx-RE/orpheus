@@ -3,6 +3,7 @@ package pm
 import (
 	"bufio"
 	"bytes"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -413,15 +414,40 @@ func parseSize(s string) int64 {
 }
 
 func parseDate(s string) time.Time {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "None" || s == "-" {
+		return time.Time{}
+	}
 	formats := []string{
 		"Mon 02 Jan 2006 03:04:05 PM MST",
+		"Mon 02 Jan 2006 03:04:05 PM -0700",
+		"Mon 02 Jan 2006 03:04:05 PM",
 		"Mon 02 Jan 2006 15:04:05 MST",
+		"Mon 02 Jan 2006 15:04:05 -0700",
+		"Mon 02 Jan 2006 15:04:05",
 		"Mon Jan 02 15:04:05 2006",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05Z07:00",
+		"2006-01-02T15:04:05",
+		time.RFC3339,
+		time.RFC1123,
+		time.RFC822,
+		time.ANSIC,
+		time.UnixDate,
+		time.RubyDate,
 	}
 	for _, f := range formats {
-		t, err := time.Parse(f, s)
-		if err == nil {
+		if t, err := time.Parse(f, s); err == nil {
 			return t
+		}
+	}
+	// Fallback: If unknown timezone suffix causes parse error, try stripping the last token
+	if idx := strings.LastIndex(s, " "); idx > 0 {
+		prefix := s[:idx]
+		for _, f := range formats {
+			if t, err := time.Parse(f, prefix); err == nil {
+				return t
+			}
 		}
 	}
 	return time.Time{}
@@ -430,6 +456,7 @@ func parseDate(s string) time.Time {
 func runCmd(name string, args ...string) ([]byte, error) {
 	var buf bytes.Buffer
 	cmd := exec.Command(name, args...)
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	cmd.Stdout = &buf
 	if err := cmd.Run(); err != nil {
 		return nil, err
@@ -440,6 +467,7 @@ func runCmd(name string, args ...string) ([]byte, error) {
 func runCmdAllowExit1(name string, args ...string) ([]byte, error) {
 	var buf bytes.Buffer
 	cmd := exec.Command(name, args...)
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	cmd.Stdout = &buf
 	err := cmd.Run()
 	if err != nil {
