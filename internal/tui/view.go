@@ -227,7 +227,7 @@ func (m Model) renderUpdateModal() string {
 		} else {
 			sb.WriteString(styleOrphan.Render(wrapText(m.updateErr, innerW)) + "\n\n")
 		}
-		sb.WriteString(styleDimmed.Render("j/k scroll log  |  Enter/Esc to close and reload"))
+		sb.WriteString(styleDimmed.Render("↑/↓ scroll log  |  Enter/Esc to close and reload"))
 
 	// Phase: update complete (done)
 	case m.updateDone:
@@ -237,7 +237,7 @@ func (m Model) renderUpdateModal() string {
 			sb.WriteString(m.updateOutputVP.View() + "\n")
 			sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n\n")
 		}
-		sb.WriteString(styleDimmed.Render("j/k scroll log  |  Enter/Esc to close and reload"))
+		sb.WriteString(styleDimmed.Render("↑/↓ scroll log  |  Enter/Esc to close and reload"))
 
 	// Phase: AI changelog loading
 	case m.updateAILoading:
@@ -264,7 +264,7 @@ func (m Model) renderUpdateModal() string {
 		}
 		sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n\n")
 		sb.WriteString(styleKey.Render("Enter") + styleDimmed.Render(" proceed to update  |  ") +
-			styleKey.Render("j/k") + styleDimmed.Render(" scroll  |  ") +
+			styleKey.Render("↑/↓") + styleDimmed.Render(" scroll  |  ") +
 			styleKey.Render("Esc") + styleDimmed.Render(" back"))
 
 	// Phase: Initial confirmation & "Ask AI what's changed" prompt
@@ -322,7 +322,7 @@ func (m Model) renderCleanCacheModal() string {
 		} else {
 			sb.WriteString(styleOrphan.Render(wrapText(m.cleanCacheErr, innerW)) + "\n\n")
 		}
-		sb.WriteString(styleDimmed.Render("j/k scroll log  |  Enter/Esc to close"))
+		sb.WriteString(styleDimmed.Render("↑/↓ scroll log  |  Enter/Esc to close"))
 
 	case m.cleanCacheDone:
 		sb.WriteString(styleVerdict.Render("✓ Cache cleaned successfully!") + "\n\n")
@@ -331,7 +331,7 @@ func (m Model) renderCleanCacheModal() string {
 			sb.WriteString(m.cleanCacheOutputVP.View() + "\n")
 			sb.WriteString(styleDivider.Render(strings.Repeat("─", innerW)) + "\n\n")
 		}
-		sb.WriteString(styleDimmed.Render("j/k scroll log  |  Enter/Esc to close"))
+		sb.WriteString(styleDimmed.Render("↑/↓ scroll log  |  Enter/Esc to close"))
 
 	default:
 		var desc string
@@ -570,7 +570,7 @@ func (m Model) renderInstallModal() string {
 				fmt.Sprintf("\n  %d/%d", m.installResultsCursor+1, count)))
 		}
 
-		sb.WriteString("\n\n" + styleDimmed.Render("j/k navigate  |  ") +
+		sb.WriteString("\n\n" + styleDimmed.Render("↑/↓ navigate  |  ") +
 			styleKey.Render("Tab") + styleDimmed.Render(" inspect & AI  |  Enter install  |  Esc/") +
 			styleKey.Render("/") + styleDimmed.Render(" search"))
 
